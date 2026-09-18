@@ -1,0 +1,9 @@
+node_modules/
+artifacts/
+*.log
+dist/
+.wrangler/
+.dev.vars*
+.env*
+worker-configuration.d.ts
+*.png

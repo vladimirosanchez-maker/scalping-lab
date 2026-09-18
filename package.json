@@ -1,0 +1,23 @@
+{
+  "name": "scalping-btc-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:ui": "node tests/browser.mjs",
+    "test:zoom": "node tests/zoom.mjs",
+    "test:calculator": "node tests/calculator.mjs",
+    "build:pages": "node scripts/build-pages.mjs",
+    "deploy:api": "wrangler deploy",
+    "test:pages": "node tests/pages.mjs --live"
+  },
+  "dependencies": {
+    "lightweight-charts": "5.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "wrangler": "^4.134.0"
+  }
+}
