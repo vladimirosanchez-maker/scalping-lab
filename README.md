@@ -106,3 +106,7 @@ Ajusta el zoom y pulsa **Guardar vista**. Se conserva una vista por moneda y tem
 El precio se consulta cada 3 segundos con la página visible; al volver a la pestaña o recuperar internet se reinicia la conexión. Los fallos se reintentan y los datos antiguos bloquean señales. El alojamiento público funciona sin el PC, pero depende de GitHub, Cloudflare, Binance y la conexión del dispositivo.
 
 La migración conserva vistas, diario y parámetros de comisiones del usuario. Los mínimos y pasos de cantidad se leen de LOT_SIZE y MIN_NOTIONAL; la precisión de precio se obtiene de PRICE_FILTER. Las comisiones siguen siendo editables y deben corresponder a la cuenta del usuario.
+
+## Apariencia de indicadores
+
+RSI 14 sobre cierre, SMA 14 blanca y niveles 30/50/70 con relleno violeta. RSI y SMA muestran velas cerradas. SQZMOM_LB usa BB 20/2 y KC 20/1,5 con SMA de True Range y regresión lineal de 20. Se implementa la fórmula corregida publicada por [LazyBear](https://www.tradingview.com/script/nqQ1DT5a-Squeeze-Momentum-Indicator-LazyBear/), respetando el multiplicador BB 2. ADX 14/DI 14 se dibuja blanco en escala izquierda con referencia 23; el momentum usa escala derecha. Los DI siguen calculándose para el asistente. El nivel visual 23 es independiente del umbral configurable de señales; SQZ no añade entradas automáticas. Guardar vista conserva ambas escalas del panel combinado.

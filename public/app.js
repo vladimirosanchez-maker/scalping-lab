@@ -1,5 +1,6 @@
+import { sma, squeezeMomentum } from './oscillators.js';
 import { fetchBinanceMarket } from './binance.js';
-import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from './vendor/charts.js';
+import { createChart, CandlestickSeries, LineSeries, HistogramSeries, BaselineSeries, createSeriesMarkers } from './vendor/charts.js';
 import { MARKET_API } from './config.js';
 import { MARKETS, validMarket } from './markets.js';
 import { defaults, analyze, indicators, pivots, closed, riskPlan, dailyStats, SECONDS } from './strategy.js';
@@ -41,13 +42,14 @@ const priceDecimals = () => snapshot?.contract?.pricePrecision ?? MARKETS[curren
 let hoveredCandleTime = null;
 let plan = null, planInput = null, planTime = null, newsUntil = 0, obstacleTime = null, priceLines = [];
 let displayedFrame = null, displayedLength = 0, displayedFirstTime = null, lastAnalysisClose = null, lastDay = null;
-const colors = { ema20: '#eec078', ema55: '#83b8fb', ema200: '#ba9ef4', vwap: '#38dfb0', rsi: '#83b8fb', adx: '#ba9ef4', plus: '#38dfb0', minus: '#f47d88' };
+const colors = { ema20: '#eec078', ema55: '#83b8fb', ema200: '#ba9ef4', vwap: '#38dfb0', rsi: '#ffeb00', adx: '#eeeeee', plus: '#00c800', minus: '#ee0000' };
 const charts = [];
 function chart(id, bottom = false) {
   const c = createChart($(id), {
     autoSize: true, layout: { background: { color: '#11191f' }, textColor: '#8198a4', fontFamily: 'Segoe UI, sans-serif', fontSize: 10, attributionLogo: id === 'price-chart' },
     grid: { vertLines: { color: '#1b283055' }, horzLines: { color: '#1b2830aa' } },
     crosshair: { mode: 0, vertLine: { color: '#5a727e', labelBackgroundColor: '#30444f' }, horzLine: { color: '#5a727e', labelBackgroundColor: '#30444f' } },
+    leftPriceScale: { visible:true, minimumWidth:52, borderColor:'#243139' },
     rightPriceScale: { borderColor: '#243139', minimumWidth: 76 },
     handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
     handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
@@ -63,12 +65,22 @@ for (const key of ['ema20', 'ema55', 'ema200', 'vwap']) lineSeries[key] = priceC
 const markers = createSeriesMarkers(candleSeries, []);
 const volumeChart = chart('volume-chart');
 const volumeSeries = volumeChart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
-const rsiChart = chart('rsi-chart');
-const rsiSeries = rsiChart.addSeries(LineSeries, { color: colors.rsi, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
-for (const level of [30, 50, 70]) rsiSeries.createPriceLine({ price: level, color: level === 50 ? '#617c83' : '#344650', lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
-const adxChart = chart('adx-chart', true);
-for (const key of ['adx', 'plus', 'minus']) lineSeries[key] = adxChart.addSeries(LineSeries, { color: colors[key], lineWidth: key === 'adx' ? 2 : 1, priceLineVisible: false, lastValueVisible: false });
-let adxThreshold = lineSeries.adx.createPriceLine({ price: config.adxMin, color: '#536b75', lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
+const rsiChart = chart('rsi-chart', true);
+const rsiBand = rsiChart.addSeries(BaselineSeries, {
+  baseValue: { type: 'price', price: 30 }, topLineColor: 'transparent', bottomLineColor: 'transparent',
+  topFillColor1: '#7760ad22', topFillColor2: '#7760ad22', bottomFillColor1: 'transparent', bottomFillColor2: 'transparent',
+  lineVisible: false, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  autoscaleInfoProvider: () => null,
+});
+const rsiSeries = rsiChart.addSeries(LineSeries, { color: colors.rsi, lineWidth: 1, priceLineVisible: false, lastValueVisible: true, autoscaleInfoProvider: original => { const info = original(); return { priceRange: { minValue: Math.min(20, info?.priceRange.minValue ?? 20), maxValue: Math.max(80, info?.priceRange.maxValue ?? 80) } }; } });
+for (const level of [30, 50, 70]) rsiSeries.createPriceLine({ price: level, color: level === 50 ? '#78708080' : '#a59ab3a0', lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
+const rsiAverage = rsiChart.addSeries(LineSeries, { color:'#eeeeee', lineWidth:1, priceLineVisible:false, lastValueVisible:true });
+const adxChart = chart('adx-chart');
+adxChart.applyOptions({ leftPriceScale: { visible:true, minimumWidth:52, borderColor:'#243139' } });
+const squeezeSeries = adxChart.addSeries(HistogramSeries, { priceScaleId:'right', base:0, priceLineVisible:false, lastValueVisible:true });
+const squeezeZero = adxChart.addSeries(LineSeries, { priceScaleId:'right', lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+for (const key of ['adx', 'plus', 'minus']) lineSeries[key] = adxChart.addSeries(LineSeries, { color: colors[key], lineWidth: 1, priceScaleId:'left', visible:key === 'adx', priceLineVisible: false, lastValueVisible:key === 'adx' });
+lineSeries.adx.createPriceLine({ price:23, color:'#eeeeee', lineWidth:1, lineStyle:0, axisLabelVisible:true });
 let syncing = false;
 function setChartRange(range) {
   syncing = true;
@@ -138,6 +150,7 @@ $('price-chart').addEventListener('mouseleave', () => {
 function centerChart() {
   if (!snapshot) return;
   for (const c of charts) c.priceScale('right').applyOptions({ autoScale: true });
+  adxChart.priceScale('left').applyOptions({autoScale:true});
   const length = snapshot.candles[selected].length;
   setChartRange({ from: length - 100, to: length + 5 });
 }
@@ -149,10 +162,13 @@ function restoreView() {
   const to = Math.max(view.span - 5, Math.min(bars.length + 5, end));
   setChartRange({ from: to - view.span, to });
   charts.forEach((c, i) => {
-    const scale = view.scales?.[i];
+    const scale = c === adxChart && view.layoutVersion !== 2 ? null : view.scales?.[i];
     c.priceScale('right').applyOptions({ autoScale: scale?.autoScale !== false });
     if (scale?.autoScale === false && Number.isFinite(scale.range?.from) && Number.isFinite(scale.range?.to) && scale.range.to > scale.range.from) c.priceScale('right').setVisibleRange(scale.range);
   });
+  const left = view.adxScale;
+  adxChart.priceScale('left').applyOptions({autoScale:left?.autoScale !== false});
+  if (left?.autoScale === false && Number.isFinite(left.range?.from) && Number.isFinite(left.range?.to) && left.range.to > left.range.from) adxChart.priceScale('left').setVisibleRange(left.range);
   document.querySelectorAll('[data-series]').forEach(input => {
     input.checked = view.indicators?.[input.dataset.series] !== false;
     lineSeries[input.dataset.series].applyOptions({ visible: input.checked });
@@ -162,7 +178,7 @@ function saveView() {
   const range = priceChart.timeScale().getVisibleLogicalRange();
   if (!snapshot || !range) { toast('Espera a que carguen las velas para guardar la vista.'); return; }
   const bars = snapshot.candles[selected], live = range.to >= bars.length - 2;
-  const view = { span: range.to - range.from, live,
+  const view = { layoutVersion:2, adxScale:{autoScale:adxChart.priceScale('left').options().autoScale, range:adxChart.priceScale('left').getVisibleRange()}, span: range.to - range.from, live,
     anchor: live ? range.to - bars.length : bars[0].time + range.to * SECONDS[selected],
     scales: charts.map(c => ({ autoScale: c.priceScale('right').options().autoScale, range: c.priceScale('right').getVisibleRange() })),
     indicators: Object.fromEntries([...document.querySelectorAll('[data-series]')].map(input => [input.dataset.series, input.checked])),
@@ -175,6 +191,8 @@ function seriesData(bars, values) { return bars.map((b, i) => Number.isFinite(va
 function renderCharts() {
   if (!snapshot) return;
   const bars = snapshot.candles[selected], ind = indicators(bars);
+  const rsiClosed = ind.rsi.map((value, i) => bars[i].time + SECONDS[selected] <= Date.now() / 1000 ? value : null);
+  const rsiMean = sma(rsiClosed, 14), squeeze = squeezeMomentum(bars);
   const prevRange = priceChart.timeScale().getVisibleLogicalRange();
   const atEnd = !prevRange || prevRange.to >= displayedLength - 2;
   const switched = selected !== displayedFrame;
@@ -185,7 +203,11 @@ function renderCharts() {
     candleSeries.setData(bars);
     for (const key of ['ema20', 'ema55', 'ema200', 'vwap']) lineSeries[key].setData(seriesData(bars, ind[key]));
     volumeSeries.setData(bars.map(b => ({ time: b.time, value: b.volume, color: b.close >= b.open ? '#28624f' : '#603946' })));
-    rsiSeries.setData(seriesData(bars, ind.rsi));
+    rsiBand.setData(bars.map(bar => ({ time: bar.time, value: 70 })));
+    rsiSeries.setData(seriesData(bars, rsiClosed));
+    rsiAverage.setData(seriesData(bars, rsiMean));
+    squeezeSeries.setData(squeeze.map(p => p.value === null ? {time:p.time} : {time:p.time,value:p.value,color:p.color}));
+    squeezeZero.setData(squeeze.map(p => p.state === null ? {time:p.time} : {time:p.time,value:0,color:p.state === 'on' ? '#080808' : p.state === 'off' ? '#888888' : '#247aff'}));
     for (const key of ['adx', 'plus', 'minus']) lineSeries[key].setData(seriesData(bars, ind[key]));
   } finally { syncing = false; }
   displayedFrame = selected;
@@ -196,8 +218,8 @@ function renderCharts() {
   ohlc(bars.find(bar => bar.time === hoveredCandleTime) ?? bars.at(-1));
   $('chart-frame').textContent = selected.toUpperCase();
   $('volume-value').textContent = `${num(bars.at(-1).volume, 4)} ${asset()} · vela abierta`;
-  $('rsi-value').textContent = `${num(ind.rsi.at(-1))} · vela abierta`;
-  $('adx-value').textContent = `${num(ind.adx.at(-1))} / ${num(ind.plus.at(-1))} / ${num(ind.minus.at(-1))} · abierta`;
+  $('rsi-value').textContent = `${num(rsiClosed.filter(Number.isFinite).at(-1))} · SMA ${num(rsiMean.filter(Number.isFinite).at(-1))} · al cierre`;
+  $('adx-value').textContent = `ADX ${num(ind.adx.at(-1))} · SQZ ${num(squeeze.at(-1).value)} · vela abierta`;
   renderMarkers(); renderPriceLines();
 }
 function renderMarkers() {
@@ -332,7 +354,7 @@ function changeMarket(symbol) {
   obstacleTime = null; $('obstacle-clear').checked = false;
   newsUntil = 0; $('news-clear').checked = false;
   invalidatePlan(); markers.setMarkers([]);
-  candleSeries.setData([]); volumeSeries.setData([]); rsiSeries.setData([]);
+  candleSeries.setData([]); volumeSeries.setData([]); rsiSeries.setData([]); rsiBand.setData([]); rsiAverage.setData([]); squeezeSeries.setData([]); squeezeZero.setData([]);
   for (const series of Object.values(lineSeries)) series.setData([]);
   for (const id of ['last-price', 'mark-price', 'funding', 'funding-next', 'updated', 'volume-value', 'rsi-value', 'adx-value']) $(id).textContent = '—';
   $('ohlc').textContent = `Cargando ${asset()}…`;
@@ -362,8 +384,7 @@ $('settings-form').onsubmit = e => {
   const data = new FormData(e.target);
   config = Object.fromEntries(fields.map(([key]) => [key, Number(data.get(key))]));
   save('scalping-config-v1', config); $('settings-dialog').close();
-  lineSeries.adx.removePriceLine(adxThreshold);
-  adxThreshold = lineSeries.adx.createPriceLine({ price: config.adxMin, color: '#536b75', lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
+
   syncCalculator(); invalidatePlan(); calculatePlan(false); renderDaily(); renderAnalysis(); toast('Parámetros guardados. Plan actualizado si los precios son válidos.');
 };
 $('reset-settings').onclick = () => { for (const [key] of fields) $('settings-form').elements[key].value = defaults[key]; };

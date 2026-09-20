@@ -10,3 +10,7 @@
 .brand-icon{background:none;box-shadow:0 0 18px #be3df052;border:1px solid #ed93ff77;border-radius:11px}.mobile-mark{display:none}.market-select-label{font-size:8px;letter-spacing:1.6px;color:var(--muted);display:block;margin-bottom:2px}#market-select{margin:0;padding:5px 22px 5px 0;border:0;background:transparent;font-size:16px;font-weight:750;cursor:pointer;min-width:140px}#market-select option{background:var(--panel);color:var(--text)}.bitcoin.ethereum{background:linear-gradient(135deg,#9c8afa,#647aec);color:#f9f7ff}.trade-row-top{flex-wrap:wrap}.market-guide{font-size:12px;color:var(--muted);margin:0 0 24px;line-height:1.8}@media(max-width:760px){.mobile-mark{display:inline-block;vertical-align:middle;border-radius:7px;flex-shrink:0}.workspace-word{display:none}.topbar>span{display:flex;align-items:center}.market-strip{gap:16px}#market-select{min-width:128px;font-size:15px}.journal-footer{flex-wrap:wrap}}
 
 .time-tabs{flex-wrap:wrap;justify-content:flex-end} #save-view{color:#e8c5ff;border:1px solid #925cc2} @media(max-width:600px){.panel-heading{flex-wrap:wrap;gap:10px}.time-tabs{gap:3px}}
+
+.adx-text{color:#eee}.rsi-text{color:#ffeb00}.momentum-chart{height:190px}.pane-label{flex-wrap:wrap;row-gap:5px}
+
+#rsi-chart{height:155px}

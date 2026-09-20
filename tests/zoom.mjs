@@ -29,8 +29,9 @@ try {
   await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Datos en vivo'));
   await page.locator('#price-chart').scrollIntoViewIfNeeded();
   const box = await page.locator('#price-chart').boundingBox();
-  const width = await page.evaluate(() => document.querySelector('#price-chart').getBoundingClientRect().width - window.__zoomCharts['price-chart'].priceScale('right').width());
-  const x = box.x + width * 0.55, y = box.y + box.height * 0.5;
+  const leftAxis = await page.evaluate(() => window.__zoomCharts['price-chart'].priceScale('left').width());
+  const width = await page.evaluate(() => document.querySelector('#price-chart').getBoundingClientRect().width - window.__zoomCharts['price-chart'].priceScale('right').width() - window.__zoomCharts['price-chart'].priceScale('left').width());
+  const x = box.x + leftAxis + width * 0.55, y = box.y + box.height * 0.5;
   await page.mouse.move(x, y);
   const scroll = await page.evaluate(() => window.scrollY);
   const before = await ranges(); aligned(before);
@@ -98,6 +99,7 @@ try {
     const c = window.__zoomCharts['price-chart'];
     c.timeScale().setVisibleLogicalRange({from: 450, to: 490});
     c.priceScale('right').setVisibleRange({from: 77000, to: 79000});
+    window.__zoomCharts['adx-chart'].priceScale('left').setVisibleRange({from:10,to:60});
   }); await settle();
   await page.locator('#save-view').click();
   await page.locator('#market-select').selectOption('ETH-USDT');
@@ -108,6 +110,8 @@ try {
   near((await ranges())[0].from, 450); near((await ranges())[0].to, 490);
   const priceRange = await page.evaluate(() => window.__zoomCharts['price-chart'].priceScale('right').getVisibleRange());
   near(priceRange.from, 77000); near(priceRange.to, 79000);
+  const adxRange = await page.evaluate(() => window.__zoomCharts['adx-chart'].priceScale('left').getVisibleRange());
+  near(adxRange.from,10); near(adxRange.to,60);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.waitForFunction(() => !document.querySelector('#refresh').disabled);
   await page.mouse.move(1450, 300); const outside = await page.evaluate(() => window.scrollY); await wheel(200);
