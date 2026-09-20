@@ -16,3 +16,5 @@
 #rsi-chart{height:155px}
 
 .brand .brand-icon,.mobile-mark{object-fit:cover;border-color:#ffab38;box-shadow:0 0 12px #ff8a0040}
+
+.brand .brand-icon,.mobile-mark{border-radius:50%;box-shadow:none;border:0;background:transparent}.topbar #workspace-title{white-space:normal}#history-note{padding:0 14px}

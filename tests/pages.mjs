@@ -60,6 +60,18 @@ try {
   await page.locator('#market-select').selectOption('ETH-USDT');
   await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Datos en vivo'));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  for (const [frame,label] of [['4h','4H'],['1d','D'],['1w','W'],['1M','M']]) {
+    await page.locator(`.time-tabs [data-frame="${frame}"]`).click();
+    await page.waitForFunction(frame => document.querySelector('#price-chart').dataset.frame === frame && document.querySelector('#connection').textContent.includes('Datos en vivo'), frame);
+    assert.equal(await page.locator('#chart-frame').innerText(),label);
+    await page.locator('#save-view').click();
+    assert.match(await page.locator('#toast').innerText(), /Vista guardada/);
+  }
+  assert.match(await page.locator('#history-note').innerText(), /EMA 200 no disponible/);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#price-chart').dataset.frame === '1M' && document.querySelector('#connection').textContent.includes('Datos en vivo'));
+  assert.equal(await page.locator('#chart-frame').innerText(),'M');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await page.locator('#guide-top').click();
   assert.equal(await page.locator('#guide-dialog').evaluate(e => e.open), true);
   await page.locator('#guide-dialog .close-dialog').click();

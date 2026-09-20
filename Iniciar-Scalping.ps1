@@ -9,7 +9,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'node_modules/lightwei
 $scalpingUrl = 'http://127.0.0.1:4173'
 try {
     $response = Invoke-WebRequest -Uri $scalpingUrl -TimeoutSec 2 -UseBasicParsing
-    if ($response.Content -match 'Scalping Lab') { Start-Process $scalpingUrl; exit }
+    if ($response.Content -match 'Scalping (Lab|Cripto)') { Start-Process $scalpingUrl; exit }
     throw 'El puerto 4173 lo está usando otra aplicación.'
 } catch {
     if ($_.Exception.Message -like '*otra aplicación*') { throw }
@@ -22,7 +22,7 @@ for ($attempt = 0; $attempt -lt 20; $attempt++) {
     Start-Sleep -Milliseconds 300
     try {
         $response = Invoke-WebRequest -Uri $scalpingUrl -TimeoutSec 2 -UseBasicParsing
-        if ($response.Content -match 'Scalping Lab') { Start-Process $scalpingUrl; exit }
+        if ($response.Content -match 'Scalping (Lab|Cripto)') { Start-Process $scalpingUrl; exit }
     } catch { }
 }
 throw 'No se pudo iniciar. Revisa scalping-error.log en la carpeta del programa.'

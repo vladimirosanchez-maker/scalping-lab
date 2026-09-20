@@ -1,3 +1,4 @@
+import { FRAMES } from './timeframes.js';
 import { normalizeCandles } from './market-schema.js';
 // Public Binance USD-M perpetual market data; no account credentials.
 const decimals = value => String(value).replace(/0+$/, '').split('.')[1]?.length ?? 0;
@@ -35,9 +36,10 @@ export async function binance(path, params = {}, signal) {
 
 
 let contractCache = null;
-export async function fetchBinanceMarket(symbol, signal) {
+export async function fetchBinanceMarket(symbol, signal, selected = '1h') {
   if (!['BTC-USDT', 'ETH-USDT'].includes(symbol)) throw new Error('Mercado no permitido');
-  const frames = ['1h', '15m', '5m'];
+  if (!Object.hasOwn(FRAMES, selected)) throw new Error('Temporalidad no permitida');
+  const frames = [...new Set(['1h', '15m', '5m', selected])];
   const results = await Promise.allSettled([
     ...frames.map(interval => binance('/fapi/v1/klines', { symbol, interval, limit: 600 }, signal)),
     binance('/fapi/v1/premiumIndex', { symbol }, signal),
@@ -46,10 +48,10 @@ export async function fetchBinanceMarket(symbol, signal) {
   const candles = {};
   frames.forEach((frame, i) => {
     if (results[i].status !== 'fulfilled') throw results[i].reason;
-    candles[frame] = normalizeCandles(results[i].value);
+    candles[frame] = normalizeCandles(results[i].value, ['1h','15m','5m'].includes(frame) ? 250 : 1);
   });
-  if (results[4].status === 'fulfilled') contractCache = {time:Date.now(), data:results[4].value};
+  if (results[frames.length + 1].status === 'fulfilled') contractCache = {time:Date.now(), data:results[frames.length + 1].value};
   return {symbol, source:`Binance · ${symbol} Perpetual`, fetchedAt:Date.now(), candles,
-    premium:results[3].status === 'fulfilled' ? results[3].value : null,
+    premium:results[frames.length].status === 'fulfilled' ? results[frames.length].value : null,
     contract: contractCache?.data.find(c => c.symbol === symbol) ?? null};
 }

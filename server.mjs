@@ -1,4 +1,4 @@
-import { binance } from './worker/binance.js';
+import { fetchBinanceMarket } from './public/binance.js';
 import { normalizeCandles } from './public/market-schema.js';
 import { validMarket } from './public/markets.js';
 export { normalizeCandles } from './public/market-schema.js';
@@ -15,32 +15,13 @@ const marketStates = new Map();
 
 
 
-async function snapshot(symbol = 'BTC-USDT') {
-  if (!marketStates.has(symbol)) marketStates.set(symbol, {});
-  const state = marketStates.get(symbol);
-  const { cache, pending, contractCache } = state;
-  if (cache && Date.now() - cache.fetchedAt < 2000) return cache;
-  if (pending) return pending;
-  state.pending = (async () => {
-    const results = await Promise.allSettled([
-      ...frames.map(interval => binance('/fapi/v1/klines', { symbol, interval, limit: 600 })),
-      binance('/fapi/v1/premiumIndex', { symbol }),
-      contractCache ? Promise.resolve(contractCache) : binance('/fapi/v1/exchangeInfo'),
-    ]);
-    const candles = {};
-    frames.forEach((frame, i) => {
-      if (results[i].status !== 'fulfilled') throw results[i].reason;
-      candles[frame] = normalizeCandles(results[i].value);
-    });
-    if (results[4].status === 'fulfilled') state.contractCache = results[4].value;
-    state.cache = {
-      symbol, source: `Binance · ${symbol} Perpetual`, fetchedAt: Date.now(), candles,
-      premium: results[3].status === 'fulfilled' ? results[3].value : null,
-      contract: state.contractCache?.find(c => c.symbol === symbol) || null,
-    };
-    return state.cache;
-  })();
-  try { return await state.pending; } finally { state.pending = null; }
+async function snapshot(symbol = 'BTC-USDT', frame = '1h') {
+  const key = `${symbol}:${frame}`, state = marketStates.get(key) ?? {};
+  marketStates.set(key,state);
+  if(state.cache && Date.now()-state.cache.fetchedAt<2000) return state.cache;
+  if(state.pending) return state.pending;
+  state.pending = fetchBinanceMarket(symbol, undefined, frame).then(data => state.cache=data);
+  try { return await state.pending; } finally {state.pending=null;}
 }
 
 const types = { '.png': 'image/png', '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.md': 'text/plain; charset=utf-8' };
@@ -59,7 +40,7 @@ export const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ error: 'Mercado no permitido. Selecciona BTC-USDT o ETH-USDT.' }));
       }
       try {
-        const data = await snapshot(symbol);
+        const data = await snapshot(symbol, url.searchParams.get('frame') ?? '1h');
         res.setHeader('Content-Type', 'application/json');
         return res.end(JSON.stringify(data));
       } catch (error) {
@@ -81,5 +62,5 @@ export const server = http.createServer(async (req, res) => {
 });
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  server.listen(port, '127.0.0.1', () => console.log(`Scalping Lab disponible en http://127.0.0.1:${port}`));
+  server.listen(port, '127.0.0.1', () => console.log(`Scalping Cripto disponible en http://127.0.0.1:${port}`));
 }

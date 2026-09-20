@@ -1,5 +1,5 @@
-export function normalizeCandles(rows) {
-  if (!Array.isArray(rows) || rows.length < 250) throw new Error('Historial de velas insuficiente');
+export function normalizeCandles(rows, minimum = 250) {
+  if (!Array.isArray(rows) || rows.length < minimum) throw new Error('Historial de velas insuficiente');
   const candles = rows.map(row => ({
     time: Number(row.time) / 1000, open: Number(row.open), high: Number(row.high),
     low: Number(row.low), close: Number(row.close), volume: Number(row.volume),

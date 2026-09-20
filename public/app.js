@@ -1,3 +1,4 @@
+import { FRAMES, frameLabel, frameCoordinate, coordinateTime, candleEnd } from './timeframes.js';
 import { sma, squeezeMomentum } from './oscillators.js';
 import { fetchBinanceMarket } from './binance.js';
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, BaselineSeries, createSeriesMarkers } from './vendor/charts.js';
@@ -30,7 +31,7 @@ let trades = readStorage('scalping-journal-v1', []);
 if (!Array.isArray(trades)) trades = [];
 trades = trades.filter(t => t && Number.isFinite(t.time) && Number.isFinite(t.pnl) && ['long', 'short'].includes(t.direction) && ['TP', 'SL', 'MANUAL'].includes(t.outcome)).slice(-2000);
 let snapshot = null, analysis = null, selected = readStorage('scalping-frame-v1', '1h'), fetching = false, fetchFailed = false;
-if (!Object.hasOwn(SECONDS, selected)) selected = '1h';
+if (!Object.hasOwn(FRAMES, selected)) selected = '1h';
 let currentMarket = readStorage('scalping-market-v1', 'BTC-USDT');
 if (!validMarket(currentMarket)) currentMarket = 'BTC-USDT';
 let marketRequest = null, retryAfter = 0;
@@ -53,7 +54,7 @@ function chart(id, bottom = false) {
     rightPriceScale: { borderColor: '#243139', minimumWidth: 76 },
     handleScroll: { mouseWheel: false, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
     handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
-    timeScale: { visible: bottom, borderColor: '#243139', timeVisible: true, secondsVisible: false, rightOffset: 5, barSpacing: 7, tickMarkFormatter: t => new Date(t * 1000).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour12: false, hour: '2-digit', minute: '2-digit' }) },
+    timeScale: { visible: bottom, borderColor: '#243139', timeVisible: true, secondsVisible: false, rightOffset: 5, barSpacing: 7, tickMarkFormatter: t => ['1d','1w','1M'].includes(selected) ? new Date(t*1000).toLocaleDateString('es-CO',{timeZone:'UTC',month:'short',year:'2-digit',...(selected !== '1M' ? {day:'numeric'} : {})}) : new Date(t * 1000).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour12: false, hour: '2-digit', minute: '2-digit' }) },
     localization: { locale: 'es-CO', timeFormatter: t => dateTime(t * 1000) },
   });
   charts.push(c); return c;
@@ -100,7 +101,7 @@ for (const c of charts) c.timeScale().subscribeVisibleLogicalRangeChange(range =
 // scroll or zoom a second time. All panes share the same time window.
 for (const [index, id] of ['price-chart', 'volume-chart', 'rsi-chart', 'adx-chart'].entries()) {
   $(id).addEventListener('wheel', event => {
-    if (!event.deltaY || !snapshot) return;
+    if (!event.deltaY || !snapshot?.candles[selected]?.length) return;
     const range = priceChart.timeScale().getVisibleLogicalRange();
     if (!range) return;
     event.preventDefault();
@@ -146,24 +147,24 @@ function ohlc(bar) {
 priceChart.subscribeCrosshairMove(param => {
   const bar = param.seriesData.get(candleSeries);
   hoveredCandleTime = bar?.time ?? null;
-  if (bar) ohlc(bar); else if (snapshot) ohlc(snapshot.candles[selected].at(-1));
+  if (bar) ohlc(bar); else if (snapshot?.candles[selected]?.length) ohlc(snapshot.candles[selected].at(-1));
 });
 $('price-chart').addEventListener('mouseleave', () => {
   hoveredCandleTime = null;
-  if (snapshot) ohlc(snapshot.candles[selected].at(-1));
+  if (snapshot?.candles[selected]?.length) ohlc(snapshot.candles[selected].at(-1));
 });
 function centerChart() {
-  if (!snapshot) return;
+  if (!snapshot?.candles[selected]?.length) return;
   for (const c of charts) c.priceScale('right').applyOptions({ autoScale: true });
   adxChart.priceScale('left').applyOptions({autoScale:true});
   const length = snapshot.candles[selected].length;
-  setChartRange({ from: length - 100, to: length + 5 });
+  setChartRange({ from: Math.max(0,length - 100), to: length + 5 });
 }
 function restoreView() {
   const view = savedViews[viewKey()];
   if (!view || !Number.isFinite(view.span) || view.span < 8 || view.span > 610 || !Number.isFinite(view.anchor)) { centerChart(); return; }
   const bars = snapshot.candles[selected];
-  const end = view.live ? bars.length + view.anchor : (view.anchor - bars[0].time) / SECONDS[selected];
+  const end = view.live ? bars.length + view.anchor : (frameCoordinate(view.anchor,selected) - frameCoordinate(bars[0].time,selected));
   const to = Math.max(view.span - 5, Math.min(bars.length + 5, end));
   setChartRange({ from: to - view.span, to });
   charts.forEach((c, i) => {
@@ -181,28 +182,28 @@ function restoreView() {
 }
 function saveView() {
   const range = priceChart.timeScale().getVisibleLogicalRange();
-  if (!snapshot || !range) { toast('Espera a que carguen las velas para guardar la vista.'); return; }
+  if (!snapshot?.candles[selected]?.length || !range) { toast('Espera a que carguen las velas para guardar la vista.'); return; }
   const bars = snapshot.candles[selected], live = range.to >= bars.length - 2;
   const view = { layoutVersion:2, adxScale:{autoScale:adxChart.priceScale('left').options().autoScale, range:adxChart.priceScale('left').getVisibleRange()}, span: range.to - range.from, live,
-    anchor: live ? range.to - bars.length : bars[0].time + range.to * SECONDS[selected],
+    anchor: live ? range.to - bars.length : coordinateTime(frameCoordinate(bars[0].time,selected) + range.to,selected),
     scales: charts.map(c => ({ autoScale: c.priceScale('right').options().autoScale, range: c.priceScale('right').getVisibleRange() })),
     indicators: Object.fromEntries([...document.querySelectorAll('[data-series]')].map(input => [input.dataset.series, input.checked])),
   };
   const next = { ...savedViews, [viewKey()]: view };
-  try { localStorage.setItem('scalping-views-v1', JSON.stringify(next)); savedViews = next; toast(`Vista guardada · ${asset()} ${selected.toUpperCase()}. Se restaurará al volver a esta temporalidad.`); }
+  try { localStorage.setItem('scalping-views-v1', JSON.stringify(next)); savedViews = next; toast(`Vista guardada · ${asset()} ${frameLabel(selected)}. Se restaurará al volver a esta temporalidad.`); }
   catch { toast('No se pudo guardar la vista. Revisa el almacenamiento de este navegador.'); }
 }
 function seriesData(bars, values) { return bars.map((b, i) => Number.isFinite(values[i]) ? { time: b.time, value: values[i] } : { time: b.time }); }
 function renderCharts() {
-  if (!snapshot) return;
+  if (!snapshot?.candles[selected]?.length) return;
   const bars = snapshot.candles[selected], ind = indicators(bars);
-  const rsiClosed = ind.rsi.map((value, i) => bars[i].time + SECONDS[selected] <= Date.now() / 1000 ? value : null);
+  const rsiClosed = ind.rsi.map((value, i) => candleEnd(bars[i].time,selected) <= Date.now() / 1000 ? value : null);
   const rsiMean = sma(rsiClosed, 14), squeeze = squeezeMomentum(bars);
   const prevRange = priceChart.timeScale().getVisibleLogicalRange();
   const atEnd = !prevRange || prevRange.to >= displayedLength - 2;
   const switched = selected !== displayedFrame;
   const rangeShift = atEnd ? bars.length - displayedLength :
-    displayedFirstTime === null ? 0 : -(bars[0].time - displayedFirstTime) / SECONDS[selected];
+    displayedFirstTime === null ? 0 : -(frameCoordinate(bars[0].time,selected) - frameCoordinate(displayedFirstTime,selected));
   syncing = true;
   try {
     candleSeries.setData(bars);
@@ -221,17 +222,19 @@ function renderCharts() {
   if (switched || !prevRange) restoreView();
   else setChartRange({ from: prevRange.from + rangeShift, to: prevRange.to + rangeShift });
   ohlc(bars.find(bar => bar.time === hoveredCandleTime) ?? bars.at(-1));
-  $('chart-frame').textContent = selected.toUpperCase();
+  $('price-chart').dataset.frame = selected;
+  $('chart-frame').textContent = frameLabel(selected);
+  $('history-note').textContent = snapshot?.candles[selected]?.length < 200 ? `${snapshot.candles[selected].length} velas disponibles. EMA 200 no disponible: requiere 200 velas. Otros indicadores aparecen al completar su período.` : 'Indicadores de la temporalidad visible. Estrategia: 1H / 15m / 5m.';
   $('volume-value').textContent = `${num(bars.at(-1).volume, 4)} ${asset()} · vela abierta`;
   $('rsi-value').textContent = `${num(rsiClosed.filter(Number.isFinite).at(-1))} · SMA ${num(rsiMean.filter(Number.isFinite).at(-1))} · al cierre`;
   $('adx-value').textContent = `ADX ${num(ind.adx.at(-1))} · SQZ ${num(squeeze.at(-1).value)} · vela abierta`;
   renderMarkers(); renderPriceLines();
 }
 function renderMarkers() {
-  if (!snapshot) return;
+  if (!snapshot?.candles[selected]?.length) return;
   const ms = [];
   if ($('show-swings').checked) {
-    const bars = closed(snapshot.candles[selected], selected, analysis?.asOf ?? Date.now() / 1000);
+    const bars = snapshot.candles[selected].filter(b => candleEnd(b.time,selected) <= Date.now()/1000);
     for (const pivot of pivots(bars).slice(-45)) ms.push({ time: pivot.confirmedTime, position: pivot.kind === 'high' ? 'aboveBar' : 'belowBar', color: pivot.kind === 'high' ? '#9cadd2' : '#6eb5a0', shape: 'circle', text: `${pivot.label} ✓`, size: 0.4 });
   }
   if (selected === '5m' && analysis?.signal && !fetchFailed && analysis.healthy) ms.push({ time: analysis.signalTime - 300, position: analysis.closest === 'long' ? 'belowBar' : 'aboveBar', shape: analysis.closest === 'long' ? 'arrowUp' : 'arrowDown', color: '#eec078', text: `Técnica ${analysis.closest.toUpperCase()}`, size: 1 });
@@ -246,7 +249,7 @@ function checklist(title, checks, open, extra = '') {
   return `<details ${open ? 'open' : ''}><summary>${title}<span>${checks.filter(c => c.pass).length}/${checks.length}</span></summary>${extra}${checks.map(c => `<div class="condition ${c.pass ? 'pass' : ''}"><span class="condition-icon">${c.pass ? '✓' : '·'}</span><div><strong>${c.label}</strong><small>${c.detail}</small></div></div>`).join('')}</details>`;
 }
 function renderAnalysis() {
-  if (!snapshot) return;
+  if (!snapshot?.candles[selected]?.length) return;
   analysis = analyze(snapshot, config);
   if (lastAnalysisClose !== analysis.signalTime) {
     obstacleTime = null; $('obstacle-clear').checked = false;
@@ -287,22 +290,23 @@ function renderGates() {
 async function refresh() {
   if (fetching || Date.now() < retryAfter) return;
   fetching = true; $('refresh').disabled = true;
-  const requestedMarket = currentMarket;
+  const requestedMarket = currentMarket, requestedFrame = selected;
   const controller = new AbortController();
   marketRequest = controller;
   const timeout = setTimeout(() => controller.abort(), 18000);
   try {
     let response, data;
     if (MARKET_API === 'binance') {
-      data = await fetchBinanceMarket(requestedMarket, controller.signal);
+      data = await fetchBinanceMarket(requestedMarket, controller.signal, requestedFrame);
       response = { ok: true };
     } else {
       const endpoint = new URL(MARKET_API, location.href);
       endpoint.searchParams.set('symbol', requestedMarket);
+      endpoint.searchParams.set('frame', requestedFrame);
       response = await fetch(endpoint, { signal: controller.signal, cache: 'no-store' });
       data = await response.json();
     }
-    if (marketRequest !== controller || currentMarket !== requestedMarket) return;
+    if (marketRequest !== controller || currentMarket !== requestedMarket || selected !== requestedFrame) return;
     if (!response.ok || data.error) {
       retryAfter = Number.isFinite(data.retryAt) ? Math.min(data.retryAt, Date.now() + 15 * 60000) : Date.now() + 15000;
       throw new Error(data.error || 'No se recibió una respuesta válida');
@@ -311,6 +315,7 @@ async function refresh() {
     const responseMarket = data.symbol ?? data.contract?.symbol ?? data.premium?.symbol ?? 'BTC-USDT';
     if (responseMarket !== requestedMarket) throw new Error('Los datos no corresponden a la moneda seleccionada');
     if (!data.candles || !Object.keys(SECONDS).every(frame => Array.isArray(data.candles[frame]) && data.candles[frame].length >= 250) || !Number.isFinite(data.fetchedAt)) throw new Error('Historial incompleto. Se bloquean las señales.');
+    if (!data.candles[selected]?.length) throw new Error('No hay historial para esta temporalidad');
     snapshot = data; fetchFailed = false; $('error-banner').hidden = true;
     const precision = priceDecimals();
     candleSeries.applyOptions({ priceFormat: { type: 'price', precision, minMove: 10 ** -precision } });
@@ -321,7 +326,7 @@ async function refresh() {
     $('updated').textContent = time(snapshot.fetchedAt);
     renderAnalysis(); renderCharts();
   } catch (error) {
-    if (marketRequest !== controller || currentMarket !== requestedMarket) return;
+    if (marketRequest !== controller || currentMarket !== requestedMarket || selected !== requestedFrame) return;
     if (Number.isFinite(error.retryAt)) retryAfter = error.retryAt;
     fetchFailed = true;
     $('error-banner').textContent = `${error.message}. ${snapshot ? 'El gráfico conserva la última consulta; no lo uses como dato actual.' : 'No se muestran precios de demostración.'} Se reintentará automáticamente${retryAfter > Date.now() ? ` a las ${time(retryAfter)}` : ''}.`;
@@ -338,10 +343,10 @@ function renderMarket() {
   $('market-select').value = currentMarket;
   $('market-icon').textContent = MARKETS[currentMarket].glyph;
   $('market-icon').classList.toggle('ethereum', currentMarket === 'ETH-USDT');
-  $('workspace-title').textContent = `Scalping ${asset()}`;
+  $('workspace-title').textContent = `Scalping Cripto · ${asset()}`;
   $('chart-symbol').textContent = `${asset()}USDT`;
   $('plan-market').textContent = `CALCULADORA · ${asset()}`;
-  document.title = `Scalping Lab · ${asset()}`;
+  document.title = `Scalping Cripto · ${asset()}`;
   const precision = MARKETS[currentMarket].pricePrecision;
   for (const id of ['plan-entry', 'plan-stop', 'plan-tp']) {
     $(id).step = String(10 ** -precision); $(id).min = String(10 ** -precision);
@@ -476,7 +481,19 @@ document.querySelectorAll('[data-frame]').forEach(b => b.onclick = () => {
   save('scalping-frame-v1', selected);
   hoveredCandleTime = null;
   document.querySelectorAll('[data-frame]').forEach(other => other.classList.toggle('selected', other.dataset.frame === selected));
-  renderCharts();
+  if (snapshot?.candles[selected]?.length) renderCharts();
+  else {
+    displayedFrame = null;
+    delete $('price-chart').dataset.frame;
+    $('connection').textContent = '● Cargando temporalidad…';
+    for (const id of ['rsi-value','adx-value','volume-value']) $(id).textContent = '—';
+    candleSeries.setData([]); volumeSeries.setData([]); rsiSeries.setData([]); rsiAverage.setData([]); rsiBand.setData([]); squeezeSeries.setData([]); squeezeZero.setData([]);
+    for (const series of Object.values(lineSeries)) series.setData([]);
+    markers.setMarkers([]);
+    $('ohlc').textContent = 'Cargando ' + frameLabel(selected) + '…';
+    $('chart-frame').textContent = frameLabel(selected);
+  }
+  reconnect();
 });
 document.querySelectorAll('[data-series]').forEach(input => input.onchange = () => lineSeries[input.dataset.series].applyOptions({ visible: input.checked }));
 $('show-swings').onchange = renderMarkers; $('show-plan').onchange = renderPriceLines;

@@ -1,4 +1,4 @@
-# Scalping Lab
+# Scalping Cripto
 
 Aplicación web local en español para visualizar la estrategia de `scalpingcripto.MD` sobre BTC-USDT y ETH-USDT perpetuos de Binance. Solo consulta mercado público: no solicita claves y no envía órdenes.
 
@@ -112,3 +112,9 @@ La migración conserva vistas, diario y parámetros de comisiones del usuario. L
 RSI 14 sobre cierre, SMA 14 blanca y niveles 30/50/70 con relleno violeta. RSI y SMA muestran velas cerradas. SQZMOM_LB usa BB 20/2 y KC 20/1,5 con SMA de True Range y regresión lineal de 20. Se implementa la fórmula corregida publicada por [LazyBear](https://www.tradingview.com/script/nqQ1DT5a-Squeeze-Momentum-Indicator-LazyBear/), respetando el multiplicador BB 2. ADX 14/DI 14 se dibuja blanco en escala izquierda con referencia 23; el momentum usa escala derecha. Los DI siguen calculándose para el asistente. El nivel visual 23 es independiente del umbral configurable de señales; SQZ no añade entradas automáticas. Guardar vista conserva ambas escalas del panel combinado.
 
 El SQZ se dibuja como área continua respecto al cero, con relleno transparente y cuatro tonos según signo e impulso. El logo utiliza la imagen naranja con S azul y velas aportada por el usuario, también en el icono de inicio de iPhone.
+
+## Scalping Cripto: temporalidades y logo
+
+Gráficos: 5m, 15m, 1H, 4H, D (diario), W (semanal) y M (mensual), según las sesiones UTC de Binance. Cada selección conserva su propia vista por moneda. Se consulta la temporalidad visible junto a las tres de la estrategia; la estrategia continúa usando 1H/15m/5m. M utiliza meses de calendario, no bloques de 30 días. El historial mensual puede no alcanzar 200 velas y la EMA 200 queda sin dibujar con aviso explícito.
+
+Logo circular naranja, S azul oscuro en 3D sin sombra proyectada y velas delgadas verdes/rojas. Interpretación de «#d»: 3D, azul de referencia #08285c. Generado con la herramienta integrada de imágenes a partir del logo del usuario, con texto SCALPING CRIPTO. Prompt: círculo naranja sobre transparencia; S azul oscuro con volumen sin sombra, brillo metálico ni reflejos; velas delgadas 3D, cada una roja o verde; nombre inferior SCALPING CRIPTO. Asset final: public/scalping-round.png.
