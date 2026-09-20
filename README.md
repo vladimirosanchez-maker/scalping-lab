@@ -110,3 +110,5 @@ La migración conserva vistas, diario y parámetros de comisiones del usuario. L
 ## Apariencia de indicadores
 
 RSI 14 sobre cierre, SMA 14 blanca y niveles 30/50/70 con relleno violeta. RSI y SMA muestran velas cerradas. SQZMOM_LB usa BB 20/2 y KC 20/1,5 con SMA de True Range y regresión lineal de 20. Se implementa la fórmula corregida publicada por [LazyBear](https://www.tradingview.com/script/nqQ1DT5a-Squeeze-Momentum-Indicator-LazyBear/), respetando el multiplicador BB 2. ADX 14/DI 14 se dibuja blanco en escala izquierda con referencia 23; el momentum usa escala derecha. Los DI siguen calculándose para el asistente. El nivel visual 23 es independiente del umbral configurable de señales; SQZ no añade entradas automáticas. Guardar vista conserva ambas escalas del panel combinado.
+
+El SQZ se dibuja como área continua respecto al cero, con relleno transparente y cuatro tonos según signo e impulso. El logo utiliza la imagen naranja con S azul y velas aportada por el usuario, también en el icono de inicio de iPhone.

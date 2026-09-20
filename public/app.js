@@ -77,7 +77,12 @@ for (const level of [30, 50, 70]) rsiSeries.createPriceLine({ price: level, colo
 const rsiAverage = rsiChart.addSeries(LineSeries, { color:'#eeeeee', lineWidth:1, priceLineVisible:false, lastValueVisible:true });
 const adxChart = chart('adx-chart');
 adxChart.applyOptions({ leftPriceScale: { visible:true, minimumWidth:52, borderColor:'#243139' } });
-const squeezeSeries = adxChart.addSeries(HistogramSeries, { priceScaleId:'right', base:0, priceLineVisible:false, lastValueVisible:true });
+const squeezeSeries = adxChart.addSeries(BaselineSeries, {
+  priceScaleId:'right', baseValue:{type:'price',price:0}, lineWidth:2,
+  topLineColor:'#00dd00', topFillColor1:'#00dd0066', topFillColor2:'#00dd0066',
+  bottomLineColor:'#ff0000', bottomFillColor1:'#ff000066', bottomFillColor2:'#ff000066',
+  priceLineVisible:false, lastValueVisible:true,
+});
 const squeezeZero = adxChart.addSeries(LineSeries, { priceScaleId:'right', lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
 for (const key of ['adx', 'plus', 'minus']) lineSeries[key] = adxChart.addSeries(LineSeries, { color: colors[key], lineWidth: 1, priceScaleId:'left', visible:key === 'adx', priceLineVisible: false, lastValueVisible:key === 'adx' });
 lineSeries.adx.createPriceLine({ price:23, color:'#eeeeee', lineWidth:1, lineStyle:0, axisLabelVisible:true });
@@ -206,7 +211,7 @@ function renderCharts() {
     rsiBand.setData(bars.map(bar => ({ time: bar.time, value: 70 })));
     rsiSeries.setData(seriesData(bars, rsiClosed));
     rsiAverage.setData(seriesData(bars, rsiMean));
-    squeezeSeries.setData(squeeze.map(p => p.value === null ? {time:p.time} : {time:p.time,value:p.value,color:p.color}));
+    squeezeSeries.setData(squeeze.map(p => p.value === null ? {time:p.time} : {time:p.time,value:p.value,topLineColor:p.color,bottomLineColor:p.color,topFillColor1:`${p.color}66`,topFillColor2:`${p.color}66`,bottomFillColor1:`${p.color}66`,bottomFillColor2:`${p.color}66`}));
     squeezeZero.setData(squeeze.map(p => p.state === null ? {time:p.time} : {time:p.time,value:0,color:p.state === 'on' ? '#080808' : p.state === 'off' ? '#888888' : '#247aff'}));
     for (const key of ['adx', 'plus', 'minus']) lineSeries[key].setData(seriesData(bars, ind[key]));
   } finally { syncing = false; }

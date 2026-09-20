@@ -14,3 +14,5 @@
 .adx-text{color:#eee}.rsi-text{color:#ffeb00}.momentum-chart{height:190px}.pane-label{flex-wrap:wrap;row-gap:5px}
 
 #rsi-chart{height:155px}
+
+.brand .brand-icon,.mobile-mark{object-fit:cover;border-color:#ffab38;box-shadow:0 0 12px #ff8a0040}
