@@ -36,9 +36,9 @@ test('Only BTC and ETH are accepted; their cached candles and contracts stay sep
   t.mock.method(globalThis, 'fetch', async input => {
     const url = new URL(input), symbol = url.searchParams.get('symbol');
     requests.push(symbol);
-    const price = symbol === 'ETH-USDT' ? 3000 : 77000;
-    const data = url.pathname.endsWith('klines') ? Array.from({ length: 300 }, (_, i) => ({ time: i * 300000, open: price, close: price, high: price + 1, low: price - 1, volume: 1 })) : url.pathname.endsWith('contracts') ? [{ symbol, quantityPrecision: symbol === 'ETH-USDT' ? 2 : 4 }] : { symbol, markPrice: price };
-    return Response.json({ code: 0, data });
+    const price = symbol === 'ETHUSDT' ? 3000 : 77000;
+    const data = url.pathname.endsWith('klines') ? Array.from({ length: 300 }, (_, i) => [i * 300000, price, price + 1, price - 1, price, 1]) : url.pathname.endsWith('exchangeInfo') ? { symbols: ['BTCUSDT','ETHUSDT'].map(symbol => ({symbol, contractType:'PERPETUAL', status:'TRADING', filters:[{filterType:'LOT_SIZE',stepSize:'0.001',minQty:'0.001'},{filterType:'PRICE_FILTER',tickSize:'0.10'},{filterType:'MIN_NOTIONAL',notional:'20'}]})) } : { symbol, markPrice: price };
+    return Response.json(data);
   });
   const pending = [], ctx = { waitUntil: promise => pending.push(promise) };
   for (const symbol of ['BTC-USDT', 'ETH-USDT', 'BTC-USDT', 'ETH-USDT']) {
@@ -48,8 +48,8 @@ test('Only BTC and ETH are accepted; their cached candles and contracts stay sep
     assert.equal(payload.candles['5m'][0].close, symbol === 'ETH-USDT' ? 3000 : 77000);
     await Promise.all(pending);
   }
-  assert.equal(requests.filter(s => s === 'BTC-USDT').length, 5);
-  assert.equal(requests.filter(s => s === 'ETH-USDT').length, 5);
+  assert.equal(requests.filter(s => s === 'BTCUSDT').length, 4);
+  assert.equal(requests.filter(s => s === 'ETHUSDT').length, 4);
 });
 
 
@@ -62,13 +62,13 @@ test('Upstream rate limits are cached and respected across markets', async t => 
   t.after(() => { if (previous === undefined) delete globalThis.caches; else globalThis.caches = previous; });
   const retryAt = Date.now() + 900000;
   let calls = 0;
-  t.mock.method(globalThis, 'fetch', async () => { calls++; return Response.json({code:109429, msg:`can retry after time: ${retryAt}`}); });
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return Response.json({code:-1003, msg:'Too many requests'}, {status:429,headers:{'Retry-After':'900'}}); });
   const ctx = { waitUntil: promise => pending.push(promise) };
   const first = await worker.fetch(new Request('https://api.example/api/market?symbol=BTC-USDT'), env, ctx);
-  assert.equal(first.status, 503); assert.equal((await first.json()).retryAt, retryAt);
+  assert.equal(first.status, 503); assert.ok(Math.abs((await first.json()).retryAt - retryAt) < 1000);
   await Promise.all(pending);
   const count = calls;
   const second = await worker.fetch(new Request('https://api.example/api/market?symbol=ETH-USDT'), env, ctx);
   assert.equal(second.status, 503); assert.ok(Number(second.headers.get('Retry-After')) > 0);
-  assert.equal(calls, count, 'Do not bombard BingX while a restriction is active');
+  assert.equal(calls, count, 'Do not bombard Binance while a restriction is active');
 });

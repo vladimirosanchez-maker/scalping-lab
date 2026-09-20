@@ -193,7 +193,7 @@ export function riskPlan(input, config = defaults, contract = null) {
   const b = config.feeOut / 100 + config.slipBps / 10000;
   const unitLoss = distance + entry * a + stop * b;
   const precision = Number.isInteger(contract?.quantityPrecision) ? contract.quantityPrecision : 4;
-  const step = 10 ** -precision;
+  const step = Number(contract?.quantityStep) > 0 ? Number(contract.quantityStep) : 10 ** -precision;
   const maxMargin = Math.min(config.marginCap, config.capital);
   const available = budget - config.fundingReserve;
   const marginQty = maxMargin * config.leverage / entry;

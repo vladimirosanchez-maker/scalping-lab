@@ -11,7 +11,7 @@ const page = await browser.newPage(device);
 page.setDefaultTimeout(45000);
 const errors = [], marketResponses = [];
 page.on('pageerror', e => errors.push(e.message));
-page.on('response', r => { if (new URL(r.url()).pathname === '/api/market') marketResponses.push(r.status()); });
+page.on('response', r => { if (new URL(r.url()).pathname === '/api/market' || new URL(r.url()).hostname === 'fapi.binance.com') marketResponses.push(r.status()); });
 const site = 'https://vladimirosanchez-maker.github.io/scalping-lab/';
 if (!live) {
   const base = resolve('dist');

@@ -15,7 +15,7 @@ await copyFile(resolve(root, 'node_modules/lightweight-charts/dist/lightweight-c
 await copyFile(resolve(root, 'node_modules/lightweight-charts/LICENSE'), resolve(output, 'vendor/LICENSE'));
 await copyFile(resolve(root, 'NOTICE'), resolve(output, 'NOTICE'));
 await copyFile(resolve(root, 'scalpingcripto.MD'), resolve(output, 'estrategia-original.md'));
-await writeFile(resolve(output, 'config.js'), `export const MARKET_API = ${JSON.stringify(api.href)};\n`);
+await writeFile(resolve(output, 'config.js'), `export const MARKET_API = ${JSON.stringify(configuration.marketProvider === 'binance' ? 'binance' : api.href)};\n`);
 // Version all application modules together so Safari cannot mix deployments.
 const files = (await readdir(output)).filter(name => /\.(js|css|html)$/.test(name)).sort();
 const hash = createHash('sha256');
@@ -29,4 +29,4 @@ for (const name of files) {
   await writeFile(path, content);
 }
 await writeFile(resolve(output, '.nojekyll'), '');
-console.log(`GitHub Pages build ready in dist/; market API: ${api.origin}`);
+console.log(`GitHub Pages build ready in dist/; market source: ${configuration.marketProvider === 'binance' ? 'Binance browser API' : api.origin}`);

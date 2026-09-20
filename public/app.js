@@ -1,3 +1,4 @@
+import { fetchBinanceMarket } from './binance.js';
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from './vendor/charts.js';
 import { MARKET_API } from './config.js';
 import { MARKETS, validMarket } from './markets.js';
@@ -253,7 +254,7 @@ function renderGates() {
   if (stats.count >= config.maxTrades || stats.maxStopStreak >= config.maxStops) blockers.push('sesión bloqueada por límites');
   const tolerance = analysis?.data['5m'].values.atr * 0.15;
   if (!plan || plan.error || !plan.acceptable || planTime !== analysis?.signalTime || planInput?.direction !== analysis?.direction || Math.abs(plan.entry - analysis.entry) > tolerance) blockers.push('plan neto válido para esta señal');
-  $('gate-status').textContent = blockers.length ? `Pendiente: ${blockers.join(' · ')}.` : 'Checklist completo para revisión manual. Revisa el precio ejecutable en BingX; esta app no envía órdenes.';
+  $('gate-status').textContent = blockers.length ? `Pendiente: ${blockers.join(' · ')}.` : 'Checklist completo para revisión manual. Revisa el precio ejecutable en Binance; esta app no envía órdenes.';
   $('gate-status').classList.toggle('positive', !blockers.length);
 }
 async function refresh() {
@@ -264,10 +265,16 @@ async function refresh() {
   marketRequest = controller;
   const timeout = setTimeout(() => controller.abort(), 18000);
   try {
-    const endpoint = new URL(MARKET_API, location.href);
-    endpoint.searchParams.set('symbol', requestedMarket);
-    const response = await fetch(endpoint, { signal: controller.signal, cache: 'no-store' });
-    const data = await response.json();
+    let response, data;
+    if (MARKET_API === 'binance') {
+      data = await fetchBinanceMarket(requestedMarket, controller.signal);
+      response = { ok: true };
+    } else {
+      const endpoint = new URL(MARKET_API, location.href);
+      endpoint.searchParams.set('symbol', requestedMarket);
+      response = await fetch(endpoint, { signal: controller.signal, cache: 'no-store' });
+      data = await response.json();
+    }
     if (marketRequest !== controller || currentMarket !== requestedMarket) return;
     if (!response.ok || data.error) {
       retryAfter = Number.isFinite(data.retryAt) ? Math.min(data.retryAt, Date.now() + 15 * 60000) : Date.now() + 15000;
@@ -283,11 +290,12 @@ async function refresh() {
     $('last-price').textContent = num(snapshot.candles['5m'].at(-1).close, precision);
     $('mark-price').textContent = num(snapshot.premium?.markPrice, precision);
     $('funding').textContent = snapshot.premium ? `${num(Number(snapshot.premium.lastFundingRate) * 100, 4)} %` : 'No disponible';
-    $('funding-next').textContent = snapshot.premium?.nextFundingTime ? `Próximo: ${dateTime(Number(snapshot.premium.nextFundingTime))}` : 'Verificar en BingX';
+    $('funding-next').textContent = snapshot.premium?.nextFundingTime ? `Próximo: ${dateTime(Number(snapshot.premium.nextFundingTime))}` : 'Verificar en Binance';
     $('updated').textContent = time(snapshot.fetchedAt);
     renderAnalysis(); renderCharts();
   } catch (error) {
     if (marketRequest !== controller || currentMarket !== requestedMarket) return;
+    if (Number.isFinite(error.retryAt)) retryAfter = error.retryAt;
     fetchFailed = true;
     $('error-banner').textContent = `${error.message}. ${snapshot ? 'El gráfico conserva la última consulta; no lo uses como dato actual.' : 'No se muestran precios de demostración.'} Se reintentará automáticamente${retryAfter > Date.now() ? ` a las ${time(retryAfter)}` : ''}.`;
     $('error-banner').hidden = false;
@@ -391,7 +399,7 @@ function calculatePlan(interactive = true) {
   config = { ...config, ...values };
   save('scalping-config-v1', config);
   planInput = { sizingMode: $('plan-sizing-mode').value, direction: $('plan-direction').value, entry: Number($('plan-entry').value), stop: Number($('plan-stop').value), tp: $('plan-tp').value === '' ? undefined : Number($('plan-tp').value) };
-  plan = riskPlan(planInput, config, snapshot?.contract ?? { quantityPrecision: MARKETS[currentMarket].quantityPrecision, tradeMinQuantity: MARKETS[currentMarket].minQuantity, tradeMinUSDT: 2, estimated: true });
+  plan = riskPlan(planInput, config, snapshot?.contract ?? { quantityPrecision: MARKETS[currentMarket].quantityPrecision, tradeMinQuantity: MARKETS[currentMarket].minQuantity, tradeMinUSDT: currentMarket === 'BTC-USDT' ? 50 : 20, estimated: true });
   planTime = analysis?.signalTime ?? null;
   if (plan.error) { $('plan-result').textContent = plan.error; renderPriceLines(); renderGates(); return; }
   const metrics = [

@@ -1,14 +1,14 @@
 # Scalping Lab
 
-Aplicación web local en español para visualizar la estrategia de `scalpingcripto.MD` sobre BTC-USDT perpetuo de BingX. Solo consulta mercado público: no solicita claves y no envía órdenes.
+Aplicación web local en español para visualizar la estrategia de `scalpingcripto.MD` sobre BTC-USDT y ETH-USDT perpetuos de Binance. Solo consulta mercado público: no solicita claves y no envía órdenes.
 
 ## iPhone y acceso desde internet
 
 Abre **https://vladimirosanchez-maker.github.io/scalping-lab/** en Safari. Funciona con Wi-Fi o datos móviles, sin mantener el computador encendido. Para dejar un acceso en el iPhone: Compartir → Añadir a pantalla de inicio.
 
-La interfaz está publicada en GitHub Pages. Su API de mercado, de solo lectura, se ejecuta en Cloudflare Workers (`scalping-btc-api`) y consulta BingX desde el servidor porque BingX no permite la consulta directa desde este navegador/origen. Sigue consultando cada 3 segundos mientras la página está activa; iOS puede suspenderla al dejar Safari en segundo plano.
+La interfaz está publicada en GitHub Pages y consulta directamente la API pública HTTPS de Binance USD-M desde el navegador. Así evita el rechazo de Binance a las solicitudes desde Cloudflare. No necesita claves ni un computador encendido. Consulta cada 3 segundos mientras está visible; al regresar a Safari recupera la conexión. El servidor Node local también usa Binance. El Worker queda como adaptador opcional, pero la web publicada no depende de él.
 
-Tu capital configurado y diario se guardan en el navegador de cada dispositivo: no se publican en GitHub y no se sincronizan entre computador e iPhone. El sitio no conecta tu cuenta de BingX. La disponibilidad de los datos depende de BingX y de los servicios de alojamiento.
+Tu capital configurado y diario se guardan en el navegador de cada dispositivo: no se publican en GitHub y no se sincronizan entre computador e iPhone. El sitio no conecta tu cuenta de Binance. La disponibilidad de los datos depende de Binance y de los servicios de alojamiento.
 
 ### Actualizar la versión publicada
 
@@ -87,12 +87,12 @@ npm run test:zoom
 npm run test:calculator
 ```
 
-Las pruebas de navegador usan un contexto aislado: no escriben en el diario del usuario. Capturas y resultados de verificación quedan en `artifacts/`. Las pruebas de indicadores, riesgo y uso de velas cerradas no requieren internet. Las pruebas del navegador sí consultan el feed de BingX y verifican fallo/recuperación de red.
+Las pruebas de navegador usan un contexto aislado: no escriben en el diario del usuario. Capturas y resultados de verificación quedan en `artifacts/`. Las pruebas de indicadores, riesgo y uso de velas cerradas no requieren internet. Las pruebas del navegador sí consultan el feed de Binance y verifican fallo/recuperación de red.
 
 ## Fuentes y atribución
 
 - Estrategia local: [scalpingcripto.MD](./scalpingcripto.MD).
-- [BingX API](https://bingx-api.github.io/docs/): velas `/openApi/swap/v3/quote/klines`, marca y funding `/openApi/swap/v2/quote/premiumIndex`, especificaciones `/openApi/swap/v2/quote/contracts`. Consultas GET públicas verificadas en este entorno sin autenticación. Disponibilidad sujeta a BingX y tu red/región.
+- [Binance API](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Exchange-Information): velas `/fapi/v1/klines`, marca y funding `/fapi/v1/premiumIndex`, especificaciones `/fapi/v1/exchangeInfo`. Consultas GET públicas verificadas en este entorno sin autenticación. Disponibilidad sujeta a Binance y tu red/región.
 - [Lightweight Charts™](https://tradingview.github.io/lightweight-charts/) de [TradingView](https://www.tradingview.com/), distribuido bajo Apache 2.0; aviso de la versión 5.2.0 conservado en `NOTICE` y servido en `/NOTICE`.
 
 La estrategia no aporta un historial probado de rentabilidad. La aplicación sirve para análisis y práctica; un stop normal y un presupuesto calculado no garantizan una pérdida máxima real.
@@ -103,4 +103,6 @@ El selector permite BTC/USDT y ETH/USDT. Cambiar moneda limpia el plan para evit
 
 Ajusta el zoom y pulsa **Guardar vista**. Se conserva una vista por moneda y temporalidad en este navegador, incluso tras recargar. Otro clic sustituye la anterior. Se guardan encuadre, escala manual e indicadores visibles. Una vista junto a la última vela sigue el mercado; una histórica conserva su fecha mientras esté en las 600 velas disponibles. Centrar no sobrescribe la vista guardada.
 
-El precio se consulta cada 3 segundos con la página visible; al volver a la pestaña o recuperar internet se reinicia la conexión. Los fallos se reintentan y los datos antiguos bloquean señales. El alojamiento público funciona sin el PC, pero depende de GitHub, Cloudflare, BingX y la conexión del dispositivo.
+El precio se consulta cada 3 segundos con la página visible; al volver a la pestaña o recuperar internet se reinicia la conexión. Los fallos se reintentan y los datos antiguos bloquean señales. El alojamiento público funciona sin el PC, pero depende de GitHub, Cloudflare, Binance y la conexión del dispositivo.
+
+La migración conserva vistas, diario y parámetros de comisiones del usuario. Los mínimos y pasos de cantidad se leen de LOT_SIZE y MIN_NOTIONAL; la precisión de precio se obtiene de PRICE_FILTER. Las comisiones siguen siendo editables y deben corresponder a la cuenta del usuario.

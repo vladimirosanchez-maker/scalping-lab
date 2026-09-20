@@ -8,7 +8,7 @@ export function normalizeCandles(rows) {
     const c = candles[i];
     if (!Object.values(c).every(Number.isFinite) || !Number.isInteger(c.time) || c.low <= 0 || c.volume < 0 ||
         c.high < Math.max(c.open, c.close) || c.low > Math.min(c.open, c.close) ||
-        (i && candles[i - 1].time >= c.time)) throw new Error('BingX devolvió velas inválidas');
+        (i && candles[i - 1].time >= c.time)) throw new Error('Binance devolvió velas inválidas');
   }
   return candles;
 }

@@ -1,3 +1,4 @@
+import { binance } from './worker/binance.js';
 import { normalizeCandles } from './public/market-schema.js';
 import { validMarket } from './public/markets.js';
 export { normalizeCandles } from './public/market-schema.js';
@@ -12,15 +13,6 @@ const port = Number(process.env.PORT || 4173);
 const frames = ['1h', '15m', '5m'];
 const marketStates = new Map();
 
-async function bingx(path, params = {}) {
-  const url = new URL(path, 'https://open-api.bingx.com');
-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-  const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
-  if (!response.ok) throw new Error(`BingX respondió HTTP ${response.status}`);
-  const payload = await response.json();
-  if (payload.code !== 0) throw new Error(`BingX ${payload.code}: ${payload.msg}`);
-  return payload.data;
-}
 
 
 async function snapshot(symbol = 'BTC-USDT') {
@@ -31,9 +23,9 @@ async function snapshot(symbol = 'BTC-USDT') {
   if (pending) return pending;
   state.pending = (async () => {
     const results = await Promise.allSettled([
-      ...frames.map(interval => bingx('/openApi/swap/v3/quote/klines', { symbol, interval, limit: 600 })),
-      bingx('/openApi/swap/v2/quote/premiumIndex', { symbol }),
-      contractCache ? Promise.resolve(contractCache) : bingx('/openApi/swap/v2/quote/contracts', { symbol }),
+      ...frames.map(interval => binance('/fapi/v1/klines', { symbol, interval, limit: 600 })),
+      binance('/fapi/v1/premiumIndex', { symbol }),
+      contractCache ? Promise.resolve(contractCache) : binance('/fapi/v1/exchangeInfo'),
     ]);
     const candles = {};
     frames.forEach((frame, i) => {
@@ -42,7 +34,7 @@ async function snapshot(symbol = 'BTC-USDT') {
     });
     if (results[4].status === 'fulfilled') state.contractCache = results[4].value;
     state.cache = {
-      symbol, source: `BingX · ${symbol} Perpetual`, fetchedAt: Date.now(), candles,
+      symbol, source: `Binance · ${symbol} Perpetual`, fetchedAt: Date.now(), candles,
       premium: results[3].status === 'fulfilled' ? results[3].value : null,
       contract: state.contractCache?.find(c => c.symbol === symbol) || null,
     };
