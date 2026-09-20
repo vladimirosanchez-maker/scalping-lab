@@ -1,4 +1,5 @@
 import { normalizeCandles } from './public/market-schema.js';
+import { validMarket } from './public/markets.js';
 export { normalizeCandles } from './public/market-schema.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -9,7 +10,7 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const publicRoot = resolve(root, 'public');
 const port = Number(process.env.PORT || 4173);
 const frames = ['1h', '15m', '5m'];
-let cache, pending, contractCache;
+const marketStates = new Map();
 
 async function bingx(path, params = {}) {
   const url = new URL(path, 'https://open-api.bingx.com');
@@ -22,32 +23,35 @@ async function bingx(path, params = {}) {
 }
 
 
-async function snapshot() {
+async function snapshot(symbol = 'BTC-USDT') {
+  if (!marketStates.has(symbol)) marketStates.set(symbol, {});
+  const state = marketStates.get(symbol);
+  const { cache, pending, contractCache } = state;
   if (cache && Date.now() - cache.fetchedAt < 2000) return cache;
   if (pending) return pending;
-  pending = (async () => {
+  state.pending = (async () => {
     const results = await Promise.allSettled([
-      ...frames.map(interval => bingx('/openApi/swap/v3/quote/klines', { symbol: 'BTC-USDT', interval, limit: 600 })),
-      bingx('/openApi/swap/v2/quote/premiumIndex', { symbol: 'BTC-USDT' }),
-      contractCache ? Promise.resolve(contractCache) : bingx('/openApi/swap/v2/quote/contracts', { symbol: 'BTC-USDT' }),
+      ...frames.map(interval => bingx('/openApi/swap/v3/quote/klines', { symbol, interval, limit: 600 })),
+      bingx('/openApi/swap/v2/quote/premiumIndex', { symbol }),
+      contractCache ? Promise.resolve(contractCache) : bingx('/openApi/swap/v2/quote/contracts', { symbol }),
     ]);
     const candles = {};
     frames.forEach((frame, i) => {
       if (results[i].status !== 'fulfilled') throw results[i].reason;
       candles[frame] = normalizeCandles(results[i].value);
     });
-    if (results[4].status === 'fulfilled') contractCache = results[4].value;
-    cache = {
-      source: 'BingX · BTC-USDT Perpetual', fetchedAt: Date.now(), candles,
+    if (results[4].status === 'fulfilled') state.contractCache = results[4].value;
+    state.cache = {
+      symbol, source: `BingX · ${symbol} Perpetual`, fetchedAt: Date.now(), candles,
       premium: results[3].status === 'fulfilled' ? results[3].value : null,
-      contract: contractCache?.find(c => c.symbol === 'BTC-USDT') || null,
+      contract: state.contractCache?.find(c => c.symbol === symbol) || null,
     };
-    return cache;
+    return state.cache;
   })();
-  try { return await pending; } finally { pending = null; }
+  try { return await state.pending; } finally { state.pending = null; }
 }
 
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.md': 'text/plain; charset=utf-8' };
+const types = { '.png': 'image/png', '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.md': 'text/plain; charset=utf-8' };
 export const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -57,8 +61,13 @@ export const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/api/market') {
+      const symbol = url.searchParams.get('symbol') ?? 'BTC-USDT';
+      if (!validMarket(symbol)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Mercado no permitido. Selecciona BTC-USDT o ETH-USDT.' }));
+      }
       try {
-        const data = await snapshot();
+        const data = await snapshot(symbol);
         res.setHeader('Content-Type', 'application/json');
         return res.end(JSON.stringify(data));
       } catch (error) {

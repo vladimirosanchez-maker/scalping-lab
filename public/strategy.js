@@ -213,7 +213,7 @@ export function riskPlan(input, config = defaults, contract = null) {
   return { qty, entry, stop, tp: exit, target, loss, profit, rr: profit / loss, budget, sizingMode, withinBudget, meetsRR,
     notional: qty * entry, margin: qty * entry / config.leverage, costsLoss, costsWin,
     acceptable: meetsRR && withinBudget,
-    precision, approximateContract: !contract };
+    precision, approximateContract: !contract || Boolean(contract.estimated) };
 }
 
 export function dayKey(now = Date.now()) {

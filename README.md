@@ -96,3 +96,11 @@ Las pruebas de navegador usan un contexto aislado: no escriben en el diario del 
 - [Lightweight Charts™](https://tradingview.github.io/lightweight-charts/) de [TradingView](https://www.tradingview.com/), distribuido bajo Apache 2.0; aviso de la versión 5.2.0 conservado en `NOTICE` y servido en `/NOTICE`.
 
 La estrategia no aporta un historial probado de rentabilidad. La aplicación sirve para análisis y práctica; un stop normal y un presupuesto calculado no garantizan una pérdida máxima real.
+
+## Mercados y vistas guardadas
+
+El selector permite BTC/USDT y ETH/USDT. Cambiar moneda limpia el plan para evitar mezclar precios. El diario comparte los límites diarios entre monedas.
+
+Ajusta el zoom y pulsa **Guardar vista**. Se conserva una vista por moneda y temporalidad en este navegador, incluso tras recargar. Otro clic sustituye la anterior. Se guardan encuadre, escala manual e indicadores visibles. Una vista junto a la última vela sigue el mercado; una histórica conserva su fecha mientras esté en las 600 velas disponibles. Centrar no sobrescribe la vista guardada.
+
+El precio se consulta cada 3 segundos con la página visible; al volver a la pestaña o recuperar internet se reinicia la conexión. Los fallos se reintentan y los datos antiguos bloquean señales. El alojamiento público funciona sin el PC, pero depende de GitHub, Cloudflare, BingX y la conexión del dispositivo.

@@ -118,6 +118,14 @@ test('Explicit margin mode responds to leverage and margin instead of silently f
   const riskSized = riskPlan({ ...input, sizingMode: 'risk' }, { ...config, leverage: 10 });
   assert.ok(riskSized.loss <= riskSized.budget); assert.ok(riskSized.qty < leveraged.qty);
 });
+
+test('ETH plans use the ETH quantity step and minimum instead of BTC precision', () => {
+  const contract = { quantityPrecision: 2, tradeMinQuantity: 0.01, tradeMinUSDT: 2, symbol: 'ETH-USDT' };
+  const result = riskPlan({ direction: 'long', entry: 3000.25, stop: 2970.15 }, defaults, contract);
+  assert.ok(!result.error); assert.equal(result.precision, 2);
+  near(result.qty * 100, Math.round(result.qty * 100)); assert.ok(result.loss <= result.budget);
+  assert.ok(riskPlan({ direction: 'long', entry: 3000, stop: 2970 }, { ...defaults, capital: 1, riskPct: 0.01 }, contract).error);
+});
 test('Daily limits use Bogotá midnight and remain blocked after two stops followed by a win', () => {
   const now = Date.parse('2026-09-11T06:00:00Z');
   const trades = [

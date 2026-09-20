@@ -17,7 +17,7 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 const app = (await readFile('public/app.js', 'utf8')).replace('charts.push(c); return c;', 'charts.push(c); (window.__zoomCharts ??= {})[id] = c; return c;');
 await page.route('**/app.js', route => route.fulfill({ contentType: 'text/javascript', body: app }));
-await page.route('**/api/market', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...data, fetchedAt: Date.now() }) }));
+await page.route('**/api/market*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...data, symbol: new URL(route.request().url()).searchParams.get('symbol'), fetchedAt: Date.now() }) }));
 const ranges = () => page.evaluate(() => Object.values(window.__zoomCharts).map(c => c.timeScale().getVisibleLogicalRange()));
 const span = r => r.to - r.from;
 const near = (a, b) => assert.ok(Math.abs(a - b) < 0.02, `${a} ≠ ${b}`);
@@ -77,6 +77,39 @@ try {
     const b = await page.locator('#price-chart').boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + 100);
     const prior = await ranges(); await wheel(-120); const next = await ranges(); aligned(next); assert.ok(span(next[0]) < span(prior[0]));
   }
+  // Explicit saved views survive switching, unsaved edits, and reload.
+  await page.locator('.time-tabs [data-frame="1h"]').click(); await settle();
+  await page.evaluate(() => window.__zoomCharts['price-chart'].timeScale().setVisibleLogicalRange({from: 410, to: 470})); await settle();
+  await page.locator('[data-series="ema20"]').uncheck();
+  await page.locator('#save-view').click();
+  assert.match(await page.locator('#toast').innerText(), /Vista guardada/);
+  await page.locator('.time-tabs [data-frame="5m"]').click(); await settle();
+  await page.locator('.time-tabs [data-frame="1h"]').click(); await settle();
+  near((await ranges())[0].from, 410); near((await ranges())[0].to, 470);
+  assert.equal(await page.locator('[data-series="ema20"]').isChecked(), false);
+  await page.locator('#fit-chart').click();
+  await page.locator('.time-tabs [data-frame="15m"]').click();
+  await page.locator('.time-tabs [data-frame="1h"]').click(); await settle();
+  near((await ranges())[0].from, 410);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Datos en vivo')); await settle();
+  aligned(await ranges()); near((await ranges())[0].to, 470);
+  await page.evaluate(() => {
+    const c = window.__zoomCharts['price-chart'];
+    c.timeScale().setVisibleLogicalRange({from: 450, to: 490});
+    c.priceScale('right').setVisibleRange({from: 77000, to: 79000});
+  }); await settle();
+  await page.locator('#save-view').click();
+  await page.locator('#market-select').selectOption('ETH-USDT');
+  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Datos en vivo')); await settle();
+  near(span((await ranges())[0]), 105);
+  await page.locator('#market-select').selectOption('BTC-USDT');
+  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Datos en vivo')); await settle();
+  near((await ranges())[0].from, 450); near((await ranges())[0].to, 490);
+  const priceRange = await page.evaluate(() => window.__zoomCharts['price-chart'].priceScale('right').getVisibleRange());
+  near(priceRange.from, 77000); near(priceRange.to, 79000);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await page.waitForFunction(() => !document.querySelector('#refresh').disabled);
   await page.mouse.move(1450, 300); const outside = await page.evaluate(() => window.scrollY); await wheel(200);
   assert.ok((await page.evaluate(() => window.scrollY)) > outside, 'Wheel outside charts scrolls the page');
   assert.deepEqual(errors, []);

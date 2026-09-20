@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="Scalping Lab: moneda cripto S">
+  <defs>
+    <linearGradient id="background" x2="1" y2="1"><stop stop-color="#4717aa"/><stop offset=".55" stop-color="#b11bf0"/><stop offset="1" stop-color="#ff4fa2"/></linearGradient>
+    <linearGradient id="coin" x2="1" y2="1"><stop stop-color="#fff1a8"/><stop offset=".5" stop-color="#ffcd55"/><stop offset="1" stop-color="#ff8c35"/></linearGradient>
+    <linearGradient id="face" x2="0" y2="1"><stop stop-color="#492276"/><stop offset="1" stop-color="#200d48"/></linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="39" fill="url(#background)"/>
+  <path d="M90 16 154 53v74l-64 37-64-37V53Z" fill="url(#coin)"/>
+  <path d="m90 24 57 33v66l-57 33-57-33V57Z" fill="url(#face)"/>
+  <path d="m90 31 51 29v59l-51 30-51-30V60Z" fill="none" stroke="#d997ff" stroke-opacity=".65" stroke-width="1.5"/>
+  <path d="M119 51H76L54 73v23h48v10l-9 9H58v19h43l22-22V76H75v-7h36Z" fill="#fff5d5"/>
+  <path d="m108 46 20-11-7 23-6-7-10 10-7-7Z" fill="url(#coin)"/>
+  <path d="M83 41v9m16 84v9M22 74h10m116 32h10" stroke="#fff2b2" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="22" cy="74" r="3" fill="#fff2b2"/><circle cx="158" cy="106" r="3" fill="#fff2b2"/>
+</svg>

@@ -8,9 +8,10 @@ const engine = process.env.TEST_BROWSER === 'webkit' ? webkit : chromium;
 const browser = await engine.launch(engine === chromium ? { channel: 'msedge', headless: true } : { headless: true });
 const { defaultBrowserType, ...device } = devices['iPhone 13'];
 const page = await browser.newPage(device);
+page.setDefaultTimeout(45000);
 const errors = [], marketResponses = [];
 page.on('pageerror', e => errors.push(e.message));
-page.on('response', r => { if (r.url().endsWith('/api/market')) marketResponses.push(r.status()); });
+page.on('response', r => { if (new URL(r.url()).pathname === '/api/market') marketResponses.push(r.status()); });
 const site = 'https://vladimirosanchez-maker.github.io/scalping-lab/';
 if (!live) {
   const base = resolve('dist');
@@ -20,7 +21,7 @@ if (!live) {
     if (!file.startsWith(base + sep)) return route.abort();
     try {
       const body = await readFile(file);
-      const contentType = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[extname(file)] || 'text/plain';
+      const contentType = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' }[extname(file)] || 'text/plain';
       await route.fulfill({ body, contentType });
     } catch { await route.fulfill({ status: 404, body: 'Not found' }); }
   });
@@ -40,6 +41,24 @@ try {
   await page.locator('#plan-stop').fill('77490');
   await page.waitForSelector('.exit-card .net-total');
   assert.equal(await page.locator('.exit-card').count(), 2);
+  await page.locator('#market-select').selectOption('ETH-USDT');
+  await page.waitForFunction(() => document.querySelector('#chart-symbol').textContent === 'ETHUSDT' && document.querySelector('#connection').textContent.includes('Datos en vivo'));
+  assert.equal(await page.locator('#plan-entry').inputValue(), '');
+  assert.equal(await page.locator('.exit-card').count(), 0);
+  assert.match(await page.locator('#volume-value').innerText(), /ETH/);
+  await page.locator('#plan-entry').fill('3000.25');
+  await page.locator('#plan-stop').fill('2980.15');
+  await page.waitForSelector('.exit-card .net-total');
+  assert.match(await page.locator('.plan-metrics').innerText(), /ETH/);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#connection')?.textContent.includes('Datos en vivo'));
+  assert.equal(await page.locator('#market-select').inputValue(), 'ETH-USDT');
+  assert.equal(await page.locator('#chart-symbol').innerText(), 'ETHUSDT');
+  await page.locator('#market-select').selectOption('BTC-USDT');
+  await page.waitForFunction(() => document.querySelector('#chart-symbol').textContent === 'BTCUSDT' && document.querySelector('#connection').textContent.includes('Datos en vivo'));
+  assert.match(await page.locator('#volume-value').innerText(), /BTC/);
+  await page.locator('#market-select').selectOption('ETH-USDT');
+  await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Datos en vivo'));
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   await page.locator('#guide-top').click();
   assert.equal(await page.locator('#guide-dialog').evaluate(e => e.open), true);

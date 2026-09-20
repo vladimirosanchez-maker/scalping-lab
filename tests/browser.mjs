@@ -46,11 +46,11 @@ try {
   const download = await downloadPromise; await download.saveAs('artifacts/diario-test.csv');
   await page.locator('#guide-top').click(); assert.equal(await page.locator('#guide-dialog').evaluate(e => e.open), true);
   await page.locator('#guide-dialog .close-dialog').click();
-  await page.route('**/api/market', route => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Fallo de red de prueba' }) }));
+  await page.route('**/api/market*', route => route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ error: 'Fallo de red de prueba' }) }));
   await page.locator('#refresh').click(); await page.waitForSelector('#error-banner:not([hidden])');
   assert.ok((await page.locator('#signal-status').innerText()).includes('NO OPERAR'));
   await page.screenshot({ path: 'artifacts/dashboard-error.png', fullPage: true });
-  await page.unroute('**/api/market'); await page.locator('#refresh').click();
+  await page.unroute('**/api/market*'); await page.locator('#refresh').click();
   await page.waitForFunction(() => document.querySelector('#connection').textContent.includes('Datos en vivo'));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#guide-top').click(); assert.equal(await page.locator('#guide-dialog').evaluate(e => e.open), true);

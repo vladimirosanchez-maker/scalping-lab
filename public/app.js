@@ -1,5 +1,6 @@
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from './vendor/charts.js';
 import { MARKET_API } from './config.js';
+import { MARKETS, validMarket } from './markets.js';
 import { defaults, analyze, indicators, pivots, closed, riskPlan, dailyStats, SECONDS } from './strategy.js';
 
 const $ = id => document.getElementById(id);
@@ -26,7 +27,16 @@ if (!Number.isInteger(config.leverage)) config.leverage = defaults.leverage;
 let trades = readStorage('scalping-journal-v1', []);
 if (!Array.isArray(trades)) trades = [];
 trades = trades.filter(t => t && Number.isFinite(t.time) && Number.isFinite(t.pnl) && ['long', 'short'].includes(t.direction) && ['TP', 'SL', 'MANUAL'].includes(t.outcome)).slice(-2000);
-let snapshot = null, analysis = null, selected = '1h', fetching = false, fetchFailed = false;
+let snapshot = null, analysis = null, selected = readStorage('scalping-frame-v1', '1h'), fetching = false, fetchFailed = false;
+if (!Object.hasOwn(SECONDS, selected)) selected = '1h';
+let currentMarket = readStorage('scalping-market-v1', 'BTC-USDT');
+if (!validMarket(currentMarket)) currentMarket = 'BTC-USDT';
+let marketRequest = null, retryAfter = 0;
+let savedViews = readStorage('scalping-views-v1', {});
+if (!savedViews || typeof savedViews !== 'object' || Array.isArray(savedViews)) savedViews = {};
+const viewKey = () => `${currentMarket}:${selected}`;
+const asset = () => MARKETS[currentMarket].asset;
+const priceDecimals = () => snapshot?.contract?.pricePrecision ?? MARKETS[currentMarket].pricePrecision;
 let hoveredCandleTime = null;
 let plan = null, planInput = null, planTime = null, newsUntil = 0, obstacleTime = null, priceLines = [];
 let displayedFrame = null, displayedLength = 0, displayedFirstTime = null, lastAnalysisClose = null, lastDay = null;
@@ -111,7 +121,7 @@ function ohlc(bar) {
     item.className = `ohlc-value ${color}`;
     item.dataset.field = label;
     item.title = description;
-    item.textContent = `${label} ${num(value, 1)}`;
+    item.textContent = `${label} ${num(value, priceDecimals())}`;
     row.append(item);
   }
 }
@@ -126,8 +136,39 @@ $('price-chart').addEventListener('mouseleave', () => {
 });
 function centerChart() {
   if (!snapshot) return;
+  for (const c of charts) c.priceScale('right').applyOptions({ autoScale: true });
   const length = snapshot.candles[selected].length;
   setChartRange({ from: length - 100, to: length + 5 });
+}
+function restoreView() {
+  const view = savedViews[viewKey()];
+  if (!view || !Number.isFinite(view.span) || view.span < 8 || view.span > 610 || !Number.isFinite(view.anchor)) { centerChart(); return; }
+  const bars = snapshot.candles[selected];
+  const end = view.live ? bars.length + view.anchor : (view.anchor - bars[0].time) / SECONDS[selected];
+  const to = Math.max(view.span - 5, Math.min(bars.length + 5, end));
+  setChartRange({ from: to - view.span, to });
+  charts.forEach((c, i) => {
+    const scale = view.scales?.[i];
+    c.priceScale('right').applyOptions({ autoScale: scale?.autoScale !== false });
+    if (scale?.autoScale === false && Number.isFinite(scale.range?.from) && Number.isFinite(scale.range?.to) && scale.range.to > scale.range.from) c.priceScale('right').setVisibleRange(scale.range);
+  });
+  document.querySelectorAll('[data-series]').forEach(input => {
+    input.checked = view.indicators?.[input.dataset.series] !== false;
+    lineSeries[input.dataset.series].applyOptions({ visible: input.checked });
+  });
+}
+function saveView() {
+  const range = priceChart.timeScale().getVisibleLogicalRange();
+  if (!snapshot || !range) { toast('Espera a que carguen las velas para guardar la vista.'); return; }
+  const bars = snapshot.candles[selected], live = range.to >= bars.length - 2;
+  const view = { span: range.to - range.from, live,
+    anchor: live ? range.to - bars.length : bars[0].time + range.to * SECONDS[selected],
+    scales: charts.map(c => ({ autoScale: c.priceScale('right').options().autoScale, range: c.priceScale('right').getVisibleRange() })),
+    indicators: Object.fromEntries([...document.querySelectorAll('[data-series]')].map(input => [input.dataset.series, input.checked])),
+  };
+  const next = { ...savedViews, [viewKey()]: view };
+  try { localStorage.setItem('scalping-views-v1', JSON.stringify(next)); savedViews = next; toast(`Vista guardada · ${asset()} ${selected.toUpperCase()}. Se restaurará al volver a esta temporalidad.`); }
+  catch { toast('No se pudo guardar la vista. Revisa el almacenamiento de este navegador.'); }
 }
 function seriesData(bars, values) { return bars.map((b, i) => Number.isFinite(values[i]) ? { time: b.time, value: values[i] } : { time: b.time }); }
 function renderCharts() {
@@ -149,11 +190,11 @@ function renderCharts() {
   displayedFrame = selected;
   displayedLength = bars.length;
   displayedFirstTime = bars[0].time;
-  if (switched || !prevRange) centerChart();
+  if (switched || !prevRange) restoreView();
   else setChartRange({ from: prevRange.from + rangeShift, to: prevRange.to + rangeShift });
   ohlc(bars.find(bar => bar.time === hoveredCandleTime) ?? bars.at(-1));
   $('chart-frame').textContent = selected.toUpperCase();
-  $('volume-value').textContent = `${num(bars.at(-1).volume, 4)} BTC · vela abierta`;
+  $('volume-value').textContent = `${num(bars.at(-1).volume, 4)} ${asset()} · vela abierta`;
   $('rsi-value').textContent = `${num(ind.rsi.at(-1))} · vela abierta`;
   $('adx-value').textContent = `${num(ind.adx.at(-1))} / ${num(ind.plus.at(-1))} / ${num(ind.minus.at(-1))} · abierta`;
   renderMarkers(); renderPriceLines();
@@ -216,29 +257,87 @@ function renderGates() {
   $('gate-status').classList.toggle('positive', !blockers.length);
 }
 async function refresh() {
-  if (fetching) return;
+  if (fetching || Date.now() < retryAfter) return;
   fetching = true; $('refresh').disabled = true;
+  const requestedMarket = currentMarket;
+  const controller = new AbortController();
+  marketRequest = controller;
+  const timeout = setTimeout(() => controller.abort(), 18000);
   try {
-    const response = await fetch(MARKET_API, { signal: AbortSignal.timeout(18000), cache: 'no-store' });
+    const endpoint = new URL(MARKET_API, location.href);
+    endpoint.searchParams.set('symbol', requestedMarket);
+    const response = await fetch(endpoint, { signal: controller.signal, cache: 'no-store' });
     const data = await response.json();
-    if (!response.ok || data.error) throw new Error(data.error || 'No se recibió una respuesta válida');
+    if (marketRequest !== controller || currentMarket !== requestedMarket) return;
+    if (!response.ok || data.error) {
+      retryAfter = Number.isFinite(data.retryAt) ? Math.min(data.retryAt, Date.now() + 15 * 60000) : Date.now() + 15000;
+      throw new Error(data.error || 'No se recibió una respuesta válida');
+    }
+    retryAfter = 0;
+    const responseMarket = data.symbol ?? data.contract?.symbol ?? data.premium?.symbol ?? 'BTC-USDT';
+    if (responseMarket !== requestedMarket) throw new Error('Los datos no corresponden a la moneda seleccionada');
     if (!data.candles || !Object.keys(SECONDS).every(frame => Array.isArray(data.candles[frame]) && data.candles[frame].length >= 250) || !Number.isFinite(data.fetchedAt)) throw new Error('Historial incompleto. Se bloquean las señales.');
     snapshot = data; fetchFailed = false; $('error-banner').hidden = true;
-    $('last-price').textContent = num(snapshot.candles['5m'].at(-1).close, 1);
-    $('mark-price').textContent = num(snapshot.premium?.markPrice, 1);
+    const precision = priceDecimals();
+    candleSeries.applyOptions({ priceFormat: { type: 'price', precision, minMove: 10 ** -precision } });
+    $('last-price').textContent = num(snapshot.candles['5m'].at(-1).close, precision);
+    $('mark-price').textContent = num(snapshot.premium?.markPrice, precision);
     $('funding').textContent = snapshot.premium ? `${num(Number(snapshot.premium.lastFundingRate) * 100, 4)} %` : 'No disponible';
     $('funding-next').textContent = snapshot.premium?.nextFundingTime ? `Próximo: ${dateTime(Number(snapshot.premium.nextFundingTime))}` : 'Verificar en BingX';
     $('updated').textContent = time(snapshot.fetchedAt);
     renderAnalysis(); renderCharts();
   } catch (error) {
+    if (marketRequest !== controller || currentMarket !== requestedMarket) return;
     fetchFailed = true;
-    $('error-banner').textContent = `${error.message}. ${snapshot ? 'El gráfico conserva la última consulta; no lo uses como dato actual.' : 'No se muestran precios de demostración.'} Se reintentará automáticamente.`;
+    $('error-banner').textContent = `${error.message}. ${snapshot ? 'El gráfico conserva la última consulta; no lo uses como dato actual.' : 'No se muestran precios de demostración.'} Se reintentará automáticamente${retryAfter > Date.now() ? ` a las ${time(retryAfter)}` : ''}.`;
     $('error-banner').hidden = false;
     $('connection').textContent = '● Sin conexión'; $('connection').className = 'connection error';
     $('signal-status').textContent = 'NO OPERAR · sin conexión';
     if (snapshot) renderAnalysis(); else { $('signal-description').textContent = 'No hay datos reales disponibles. Espera a que se restablezca la conexión.'; renderGates(); }
-  } finally { fetching = false; $('refresh').disabled = false; }
+  } finally {
+    clearTimeout(timeout);
+    if (marketRequest === controller) { marketRequest = null; fetching = false; $('refresh').disabled = false; }
+  }
 }
+function renderMarket() {
+  $('market-select').value = currentMarket;
+  $('market-icon').textContent = MARKETS[currentMarket].glyph;
+  $('market-icon').classList.toggle('ethereum', currentMarket === 'ETH-USDT');
+  $('workspace-title').textContent = `Scalping ${asset()}`;
+  $('chart-symbol').textContent = `${asset()}USDT`;
+  $('plan-market').textContent = `CALCULADORA · ${asset()}`;
+  document.title = `Scalping Lab · ${asset()}`;
+  const precision = MARKETS[currentMarket].pricePrecision;
+  for (const id of ['plan-entry', 'plan-stop', 'plan-tp']) {
+    $(id).step = String(10 ** -precision); $(id).min = String(10 ** -precision);
+  }
+  candleSeries.applyOptions({ priceFormat: { type: 'price', precision, minMove: 10 ** -precision } });
+}
+function changeMarket(symbol) {
+  if (!validMarket(symbol) || symbol === currentMarket) return;
+  marketRequest?.abort(); marketRequest = null; fetching = false;
+  currentMarket = symbol; save('scalping-market-v1', symbol);
+  snapshot = null; analysis = null; fetchFailed = false; hoveredCandleTime = null;
+  displayedFrame = null; displayedLength = 0; displayedFirstTime = null; lastAnalysisClose = null;
+  clearTimeout(calculatorTimer); lastCalculatedInputs = null;
+  for (const id of ['plan-entry', 'plan-stop', 'plan-tp']) $(id).value = '';
+  obstacleTime = null; $('obstacle-clear').checked = false;
+  newsUntil = 0; $('news-clear').checked = false;
+  invalidatePlan(); markers.setMarkers([]);
+  candleSeries.setData([]); volumeSeries.setData([]); rsiSeries.setData([]);
+  for (const series of Object.values(lineSeries)) series.setData([]);
+  for (const id of ['last-price', 'mark-price', 'funding', 'funding-next', 'updated', 'volume-value', 'rsi-value', 'adx-value']) $(id).textContent = '—';
+  $('ohlc').textContent = `Cargando ${asset()}…`;
+  $('signal-status').textContent = `Cargando ${asset()}…`;
+  $('signal-status').parentElement.classList.remove('ready');
+  $('signal-description').textContent = 'Esperando velas e indicadores del mercado seleccionado.';
+  $('signal-time').textContent = 'Señales solo con datos del mercado seleccionado';
+  $('checklists').replaceChildren(); $('use-setup').disabled = true;
+  for (const frame of ['1h', '15m', '5m']) { $(`step-${frame}`).textContent = 'Esperando datos…'; $(`detail-${frame}`).textContent = asset(); }
+  $('error-banner').hidden = true; $('connection').textContent = '● Conectando'; $('connection').className = 'connection';
+  renderMarket(); renderGates(); refresh();
+}
+$('market-select').onchange = event => changeMarket(event.target.value);
 function renderSettings() {
   $('settings-fields').innerHTML = fields.map(([key, label, min, max, step]) => `<label>${label}<input name="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${config[key]}" required></label>`).join('');
 }
@@ -292,16 +391,16 @@ function calculatePlan(interactive = true) {
   config = { ...config, ...values };
   save('scalping-config-v1', config);
   planInput = { sizingMode: $('plan-sizing-mode').value, direction: $('plan-direction').value, entry: Number($('plan-entry').value), stop: Number($('plan-stop').value), tp: $('plan-tp').value === '' ? undefined : Number($('plan-tp').value) };
-  plan = riskPlan(planInput, config, snapshot?.contract);
+  plan = riskPlan(planInput, config, snapshot?.contract ?? { quantityPrecision: MARKETS[currentMarket].quantityPrecision, tradeMinQuantity: MARKETS[currentMarket].minQuantity, tradeMinUSDT: 2, estimated: true });
   planTime = analysis?.signalTime ?? null;
   if (plan.error) { $('plan-result').textContent = plan.error; renderPriceLines(); renderGates(); return; }
   const metrics = [
-    ['Tamaño de posición', `${num(plan.qty, plan.precision)} BTC`, `${num(plan.notional)} USDT nominales`],
+    ['Tamaño de posición', `${num(plan.qty, plan.precision)} ${asset()}`, `${num(plan.notional)} USDT nominales`],
     ['Margen estimado', `${num(plan.margin)} USDT`, `${config.leverage}X · máximo ${num(config.marginCap, 0)}`],
     ['Pérdida prevista', `${num(plan.loss)} USDT`, `Presupuesto ${num(plan.budget)} USDT`],
     ['Ganancia neta prevista', `${num(plan.profit)} USDT`, 'Si se alcanza el objetivo'],
     ['Relación neta', `${num(plan.rr)} : 1`, `Mínimo ${config.minRR} : 1`],
-    ['Take profit', num(plan.tp, 1), planInput.tp === undefined ? 'Calculado · valida espacio' : 'Objetivo manual'],
+    ['Take profit', num(plan.tp, priceDecimals()), planInput.tp === undefined ? 'Calculado · valida espacio' : 'Objetivo manual'],
   ];
   $('plan-result').innerHTML = `<div class="plan-metrics">${metrics.map(([label, value, small], i) => `<div><span>${label}</span><strong class="${i === 2 ? 'negative' : i === 3 && plan.profit > 0 ? 'positive' : ''}">${value}</strong><small>${small}</small></div>`).join('')}</div><p class="plan-summary">Costes estimados: ${num(plan.costsLoss)} USDT con stop / ${num(plan.costsWin)} USDT con TP. Incluyen ${config.feeIn}% + ${config.feeOut}% de comisiones, ${config.slipBps} pb por lado y ${num(config.fundingReserve)} USDT de reserva.<br><span class="${plan.meetsRR ? 'positive' : 'negative'}">${plan.meetsRR ? 'Cumple la relación neta elegida. Falta validar estructura y espacio hasta el TP.' : 'No cumple tu relación neta mínima. Este plan bloquea el checklist final.'}</span>${plan.approximateContract ? '<br>Precisión aproximada: no se pudo consultar la especificación del contrato.' : ''}</p>`;
   const capitalSummary = document.createElement('p');
@@ -314,7 +413,7 @@ function calculatePlan(interactive = true) {
     const entryFee = plan.qty * plan.entry * config.feeIn / 100;
     const exitFee = plan.qty * exit * config.feeOut / 100;
     const slip = plan.qty * (plan.entry + exit) * config.slipBps / 10000;
-    const rows = [['Precio de salida BTC', `${num(exit, 4)} USDT`], ['Resultado bruto', `${gross > 0 ? '+' : ''}${num(gross)} USDT`], ['Comisión de entrada', `−${num(entryFee)} USDT`], ['Comisión de salida', `−${num(exitFee)} USDT`], ['Deslizamiento estimado', `−${num(slip)} USDT`], ['Reserva de funding', `−${num(config.fundingReserve)} USDT`]];
+    const rows = [[`Precio de salida ${asset()}`, `${num(exit, 4)} USDT`], ['Resultado bruto', `${gross > 0 ? '+' : ''}${num(gross)} USDT`], ['Comisión de entrada', `−${num(entryFee)} USDT`], ['Comisión de salida', `−${num(exitFee)} USDT`], ['Deslizamiento estimado', `−${num(slip)} USDT`], ['Reserva de funding', `−${num(config.fundingReserve)} USDT`]];
     return `<section class="exit-card"><h3 class="${negative ? 'negative' : 'positive'}">${title}</h3><dl>${rows.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join('')}<div class="net-total"><dt>${negative ? 'Neto a perder' : net >= 0 ? 'Neto a ganar' : 'Neto a perder'}</dt><dd class="${net < 0 ? 'negative' : 'positive'}">${net > 0 ? '+' : ''}${num(net)} USDT</dd></div></dl></section>`;
   };
   scenarios.innerHTML = scenario('Stop loss · SL', plan.stop, -plan.qty * Math.abs(plan.entry - plan.stop), -plan.loss, true) + scenario('Take profit · TP', plan.tp, plan.qty * Math.abs(plan.tp - plan.entry), plan.profit, false);
@@ -332,19 +431,22 @@ function calculatePlan(interactive = true) {
 $('use-setup').onclick = () => {
   if (!analysis?.healthy || fetchFailed || !analysis.prepared || !analysis.stop) return toast('Todavía no hay una estructura preparada y válida.');
   $('plan-direction').value = analysis.direction;
-  $('plan-entry').value = analysis.entry.toFixed(1);
-  const stop = analysis.direction === 'long' ? Math.floor(analysis.stop * 10) / 10 : Math.ceil(analysis.stop * 10) / 10;
-  $('plan-stop').value = stop.toFixed(1); $('plan-tp').value = '';
+  const precision = priceDecimals(), scale = 10 ** precision;
+  $('plan-entry').value = analysis.entry.toFixed(precision);
+  const stop = analysis.direction === 'long' ? Math.floor(analysis.stop * scale) / scale : Math.ceil(analysis.stop * scale) / scale;
+  $('plan-stop').value = stop.toFixed(precision); $('plan-tp').value = '';
   calculatePlan(); toast('Plan orientativo cargado. Comprueba la ruptura y el próximo soporte o resistencia.');
 };
 document.querySelectorAll('[data-frame]').forEach(b => b.onclick = () => {
   selected = b.dataset.frame;
+  save('scalping-frame-v1', selected);
   hoveredCandleTime = null;
   document.querySelectorAll('[data-frame]').forEach(other => other.classList.toggle('selected', other.dataset.frame === selected));
   renderCharts();
 });
 document.querySelectorAll('[data-series]').forEach(input => input.onchange = () => lineSeries[input.dataset.series].applyOptions({ visible: input.checked }));
 $('show-swings').onchange = renderMarkers; $('show-plan').onchange = renderPriceLines;
+$('save-view').onclick = saveView;
 $('fit-chart').onclick = centerChart; $('refresh').onclick = refresh;
 $('news-clear').onchange = e => { newsUntil = e.target.checked ? Date.now() + 30 * 60000 : 0; renderGates(); };
 $('obstacle-clear').onchange = e => { obstacleTime = e.target.checked ? analysis?.signalTime : null; renderGates(); };
@@ -367,7 +469,8 @@ function renderDaily() {
     const outcome = document.createElement('span'); outcome.className = 'pill'; outcome.textContent = trade.outcome;
     const pnl = document.createElement('span'); pnl.textContent = `${num(trade.pnl)} USDT`; pnl.className = trade.pnl >= 0 ? 'positive' : 'negative';
     const when = document.createElement('small'); when.textContent = dateTime(trade.time);
-    top.append(dir, outcome, pnl, when); row.append(top);
+    const market = document.createElement('span'); market.className = 'pill'; market.textContent = MARKETS[trade.symbol]?.asset ?? 'BTC';
+    top.append(market, dir, outcome, pnl, when); row.append(top);
     if (trade.note) { const note = document.createElement('p'); note.textContent = String(trade.note); row.append(note); }
     list.append(row);
   }
@@ -375,6 +478,7 @@ function renderDaily() {
 }
 $('add-trade').onclick = () => {
   const form = $('trade-form'); form.reset();
+  form.elements.symbol.value = currentMarket;
   const parts = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()).replace(' ', 'T');
   form.elements.when.value = parts;
   $('trade-dialog').showModal();
@@ -385,18 +489,21 @@ $('trade-form').onsubmit = e => {
   if (!Number.isFinite(timestamp) || timestamp > Date.now() + 60000) return toast('Usa una fecha válida de una operación ya cerrada, en hora de Bogotá.');
   const pnl = Number(data.get('pnl'));
   if (!Number.isFinite(pnl)) return toast('Introduce un resultado neto válido.');
-  trades.push({ id: crypto.randomUUID(), time: timestamp, direction: data.get('direction'), outcome: data.get('outcome'), pnl, note: String(data.get('note')).slice(0, 500) });
+  const symbol = data.get('symbol');
+  if (!validMarket(symbol)) return toast('Selecciona BTC o ETH para el registro.');
+  trades.push({ id: crypto.randomUUID(), symbol, time: timestamp, direction: data.get('direction'), outcome: data.get('outcome'), pnl, note: String(data.get('note')).slice(0, 500) });
   save('scalping-journal-v1', trades); $('trade-dialog').close(); renderDaily(); toast('Operación registrada.');
 };
 $('export-journal').onclick = () => {
   const cell = value => { let text = String(value ?? ''); if (/^[=+@\-\t\r]/.test(text)) text = "'" + text; return `"${text.replaceAll('"', '""')}"`; };
-  const rows = [['Fecha UTC', 'Dirección', 'Salida', 'PnL neto USDT', 'Nota'], ...trades.map(t => [new Date(t.time).toISOString(), t.direction, t.outcome, t.pnl, t.note])];
+  const rows = [['Fecha UTC', 'Mercado', 'Dirección', 'Salida', 'PnL neto USDT', 'Nota'], ...trades.map(t => [new Date(t.time).toISOString(), t.symbol ?? 'BTC-USDT', t.direction, t.outcome, t.pnl, t.note])];
   const csv = '\uFEFF' + rows.map(row => row.map(cell).join(';')).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a'); a.href = url; a.download = 'diario-scalping.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
-renderDaily(); refresh();
-setInterval(refresh, 3000);
+document.querySelectorAll('[data-frame]').forEach(b => b.classList.toggle('selected', b.dataset.frame === selected));
+renderMarket(); renderDaily(); refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 3000);
 setInterval(() => {
   if (snapshot) {
     const asOf = Math.floor(Date.now() / 300000) * 300;
@@ -406,4 +513,10 @@ setInterval(() => {
   if (currentDay !== lastDay) { lastDay = currentDay; renderDaily(); }
   renderGates();
 }, 1000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+function reconnect() {
+  marketRequest?.abort(); marketRequest = null; fetching = false;
+  refresh();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) reconnect(); });
+window.addEventListener('online', reconnect);
+window.addEventListener('pageshow', event => { if (event.persisted) reconnect(); });

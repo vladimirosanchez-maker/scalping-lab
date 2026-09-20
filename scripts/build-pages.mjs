@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readdir, copyFile, writeFile, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -15,5 +16,17 @@ await copyFile(resolve(root, 'node_modules/lightweight-charts/LICENSE'), resolve
 await copyFile(resolve(root, 'NOTICE'), resolve(output, 'NOTICE'));
 await copyFile(resolve(root, 'scalpingcripto.MD'), resolve(output, 'estrategia-original.md'));
 await writeFile(resolve(output, 'config.js'), `export const MARKET_API = ${JSON.stringify(api.href)};\n`);
+// Version all application modules together so Safari cannot mix deployments.
+const files = (await readdir(output)).filter(name => /\.(js|css|html)$/.test(name)).sort();
+const hash = createHash('sha256');
+for (const name of files) hash.update(await readFile(resolve(output, name)));
+const version = hash.digest('hex').slice(0, 12);
+for (const name of files) {
+  const path = resolve(output, name);
+  let content = await readFile(path, 'utf8');
+  if (name.endsWith('.js')) content = content.replace(/(from\s+['"])(\.\/[^'"?]+\.js)(['"])/g, `$1$2?v=${version}$3`);
+  if (name.endsWith('.html')) content = content.replace(/((?:src|href)=["'])(\.\/(?:app\.js|style\.css))(["'])/g, `$1$2?v=${version}$3`);
+  await writeFile(path, content);
+}
 await writeFile(resolve(output, '.nojekyll'), '');
 console.log(`GitHub Pages build ready in dist/; market API: ${api.origin}`);
