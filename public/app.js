@@ -72,7 +72,7 @@ const rsiBand = rsiChart.addSeries(BaselineSeries, {
   lineVisible: false, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
   autoscaleInfoProvider: () => null,
 });
-const rsiSeries = rsiChart.addSeries(LineSeries, { color: colors.rsi, lineWidth: 1, priceLineVisible: false, lastValueVisible: true, autoscaleInfoProvider: original => { const info = original(); return { priceRange: { minValue: Math.min(20, info?.priceRange.minValue ?? 20), maxValue: Math.max(80, info?.priceRange.maxValue ?? 80) } }; } });
+const rsiSeries = rsiChart.addSeries(LineSeries, { color: colors.rsi, lineWidth: 1, priceLineVisible: false, lastValueVisible: true, autoscaleInfoProvider: original => { const info = original(); return { priceRange: { minValue: Math.min(20, info?.priceRange?.minValue ?? 20), maxValue: Math.max(80, info?.priceRange?.maxValue ?? 80) } }; } });
 for (const level of [30, 50, 70]) rsiSeries.createPriceLine({ price: level, color: level === 50 ? '#78708080' : '#a59ab3a0', lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
 const rsiAverage = rsiChart.addSeries(LineSeries, { color:'#eeeeee', lineWidth:1, priceLineVisible:false, lastValueVisible:true });
 const adxChart = chart('adx-chart');
